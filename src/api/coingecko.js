@@ -3,7 +3,9 @@ const axios = require('axios');
 const redis = require('redis');
 
 const router = express.Router();
-const redisClient = redis.createClient();
+const redisClient = redis.createClient({
+  url: process.env.REDIS_URL 
+});
 redisClient.connect();
 
 router.get('/prices', async (req, res) => {
