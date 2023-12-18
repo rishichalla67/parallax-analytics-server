@@ -99,12 +99,12 @@ router.get('/prices', async (req, res) => {
     console.log('Serving from cache');
     return res.json(JSON.parse(cachedData));
   }
-
-  // Split the symbols and add them to the queue
-  symbolList.forEach(symbol => priceSymbolQueue.symbols.add(symbol));
-
-  // Add the response handler to the queue
-  priceSymbolQueue.handlers.push({ symbols: symbolList, res });
+  else{
+    // Split the symbols and add them to the queue
+    symbolList.forEach(symbol => priceSymbolQueue.symbols.add(symbol));
+    // Add the response handler to the queue
+    priceSymbolQueue.handlers.push({ symbols: symbolList, res });
+  }
 
   // If the timer is not set, set it to process the queue after 2.5 seconds
   if (!priceSymbolQueue.timer) {
@@ -131,10 +131,11 @@ router.get('/symbolData', async (req, res) => {
     console.log('Serving from cache');
     return res.json(JSON.parse(cachedData));
   }
-
-  // Add the symbols and the response handler to the queue
-  symbolList.forEach(symbol => dataSymbolQueue.symbols.add(symbol));
-  dataSymbolQueue.handlers.push({ symbols: symbolList, res });
+  else{
+    // Add the symbols and the response handler to the queue
+    symbolList.forEach(symbol => dataSymbolQueue.symbols.add(symbol));
+    dataSymbolQueue.handlers.push({ symbols: symbolList, res });
+  }  
 
   // If the timer is not set, set it to process the queue after 2.5 seconds
   if (!dataSymbolQueue.timer) {
