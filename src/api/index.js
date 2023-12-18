@@ -1,6 +1,6 @@
 const express = require('express');
 
-const emojis = require('./coingecko');
+const coingecko = require('./coingecko');
 
 const router = express.Router();
 
@@ -10,6 +10,6 @@ router.get('/', (req, res) => {
   });
 });
 
-router.use('/emojis', emojis);
+router.use('/', coingecko);
 
 module.exports = router;

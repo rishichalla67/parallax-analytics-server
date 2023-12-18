@@ -5,7 +5,7 @@ const rateLimit = require('axios-rate-limit');
 
 const router = express.Router();
 const redisClient = redis.createClient({
-  url: process.env.REDIS_URL 
+  url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972" 
 });
 redisClient.connect();
 
@@ -25,31 +25,49 @@ const dataSymbolQueue = {
 };
 
 // Function to process the queued symbols
-function processSymbolQueue() {
+async function processSymbolQueue() {
   const symbolsToFetch = Array.from(priceSymbolQueue.symbols).join(',');
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(symbolsToFetch)}&vs_currencies=usd&include_last_updated_at=true`;
-
-  axios.get(url).then(response => {
-    const data = response.data;
-    // Call each handler with the corresponding data
-    priceSymbolQueue.handlers.forEach(handler => {
-      const symbolData = {};
-      handler.symbols.forEach(symbol => {
-        symbolData[symbol] = data[symbol] || null;
+  const cacheKey = `priceData:${symbolsToFetch}`;
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log('Serving from cache');
+      const data = JSON.parse(cachedData);
+      // Call each handler with the corresponding data
+      priceSymbolQueue.handlers.forEach(handler => {
+        const symbolData = {};
+        handler.symbols.forEach(symbol => {
+          symbolData[symbol] = data[symbol] || null;
+        });
+        handler.res.json(symbolData);
       });
-      handler.res.json(symbolData);
-    });
-  }).catch(error => {
+    } else {
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(symbolsToFetch)}&vs_currencies=usd&include_last_updated_at=true`;
+      const response = await axios.get(url);
+      const data = response.data;
+      // Store the response in cache
+      await redisClient.setEx(cacheKey, 300, JSON.stringify(data));
+      // Call each handler with the corresponding data
+      priceSymbolQueue.handlers.forEach(handler => {
+        const symbolData = {};
+        handler.symbols.forEach(symbol => {
+          symbolData[symbol] = data[symbol] || null;
+        });
+        handler.res.json(symbolData);
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching or caching prices:', error);
     // Handle errors by sending an error response to all handlers
     priceSymbolQueue.handlers.forEach(handler => {
       handler.res.status(500).send('Error fetching prices');
     });
-  }).finally(() => {
+  } finally {
     // Reset the queue and timer
     priceSymbolQueue.symbols.clear();
     priceSymbolQueue.handlers = [];
     priceSymbolQueue.timer = null;
-  });
+  }
 }
 
 // Function to process the queued symbol data requests
@@ -62,7 +80,7 @@ async function processSymbolDataQueue() {
 
     // Store the response in cache
     const cacheKey = `symbolData:${symbolsToFetch}`;
-    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data));
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(response.data));
 
     // Distribute the data to the appropriate handlers
     dataSymbolQueue.handlers.forEach(handler => {
@@ -164,7 +182,7 @@ router.get('/chartData', async (req, res) => {
       return res.status(429).send('Too many requests, please try again later.');
     }
 
-    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(response.data)); // Cache for 2.5 minutes
     res.json(response.data);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
@@ -196,7 +214,7 @@ router.get('/search', async (req, res) => {
       return res.status(429).send('Too many requests, please try again later.');
     }
 
-    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
+    await redisClient.setEx(cacheKey, 300, JSON.stringify(response.data)); // Cache for 5 minutes
     res.json(response.data);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
