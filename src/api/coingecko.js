@@ -6,6 +6,7 @@ const rateLimit = require('axios-rate-limit');
 const router = express.Router();
 const redisClient = redis.createClient({
   url: `${process.env.REDIS_URL}` 
+  // url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
 });
 redisClient.connect();
 
@@ -68,7 +69,7 @@ async function processSymbolDataQueue() {
     // Store each symbol's data in cache separately
     for (const symbolData of data) {
       const cacheKey = `symbolData:${symbolData.id}`;
-      await redisClient.setEx(cacheKey, 1000, JSON.stringify(symbolData));
+      await redisClient.setEx(cacheKey, 1500, JSON.stringify(symbolData));
     }
 
     dataSymbolQueue.handlers.forEach(handler => {
@@ -122,9 +123,9 @@ router.get('/prices', async (req, res) => {
     priceSymbolQueue.handlers.push({ symbols: symbolList, res, cachedResponses });
   }
 
-  // If the timer is not set, set it to process the queue after .25 seconds
+  // If the timer is not set, set it to process the queue after .0 seconds
   if (!priceSymbolQueue.timer) {
-    priceSymbolQueue.timer = setTimeout(processSymbolQueue, 250);
+    priceSymbolQueue.timer = setTimeout(processSymbolQueue, 0);
   }
 });
 
@@ -163,9 +164,9 @@ router.get('/symbolData', async (req, res) => {
     dataSymbolQueue.handlers.push({ symbols: symbolList, res, cachedResponses });
   }  
 
-  // If the timer is not set, set it to process the queue after .52 seconds
+  // If the timer is not set, set it to process the queue after .0 seconds
   if (!dataSymbolQueue.timer) {
-    dataSymbolQueue.timer = setTimeout(processSymbolDataQueue, 250);
+    dataSymbolQueue.timer = setTimeout(processSymbolDataQueue, 0);
   }
 });
 
@@ -179,14 +180,7 @@ function removeDuplicates(strings) {
 
 // Function to refresh popular coins cache
 function refreshPopularCoinsCache() {
-  axios.get('https://api.coingecko.com/api/v3/coins/markets', {
-    params: {
-      vs_currency: 'usd',
-      order: 'market_cap_desc',
-      per_page: 100,
-      page: 1
-    }
-  })
+  axios.get('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1')
   .then(response => {
     const topCoins = response.data.map(coin => coin.id);
     const symbols = topCoins.join(',');
@@ -201,23 +195,5 @@ function refreshPopularCoinsCache() {
     .catch(error => console.error('Error refreshing cache for popular coins:', error));
 }
 
-let inactivityTimer = null;
-
-function resetInactivityTimer() {
-  if (inactivityTimer) {
-    clearTimeout(inactivityTimer);
-  }
-  inactivityTimer = setTimeout(() => {
-    refreshPopularCoinsCache();
-  }, 300000); // 5 minutes
-}
-
-// Reset inactivity timer on every API call except /health
-router.use((req, res, next) => {
-  if (req.path !== '/health') {
-    resetInactivityTimer();
-  }
-  next();
-});
 
 module.exports = router;
