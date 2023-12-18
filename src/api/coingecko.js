@@ -83,14 +83,24 @@ async function processSymbolDataQueue() {
   }
 }
 
-router.get('/prices', (req, res) => {
+router.get('/prices', async (req, res) => {
   const { symbols } = req.query;
   if (!symbols) {
     return res.status(400).send('No symbols provided');
   }
 
+  let symbolListDups = symbols.split(',');
+
+  // Remove any repeat values in the symbols list
+  let symbolList = removeDuplicates(symbolListDups);
+  const cacheKey = `priceData:${symbolList.join(',')}`;
+  const cachedData = await redisClient.get(cacheKey);
+  if (cachedData) {
+    console.log('Serving from cache');
+    return res.json(JSON.parse(cachedData));
+  }
+
   // Split the symbols and add them to the queue
-  const symbolList = symbols.split(',');
   symbolList.forEach(symbol => priceSymbolQueue.symbols.add(symbol));
 
   // Add the response handler to the queue
@@ -102,12 +112,17 @@ router.get('/prices', (req, res) => {
   }
 });
 
+
+
 router.get('/symbolData', async (req, res) => {
   const { symbols } = req.query;
   if (!symbols) {
     return res.status(400).send('No symbols provided');
   }
-  const symbolList = symbols.split(',');
+  let dataSymbolListDups = symbols.split(',');
+
+  // Remove any repeat values in the symbols list
+  let symbolList = removeDuplicates(dataSymbolListDups);
 
   // Check cache first before adding to the queue
   const cacheKey = `symbolData:${symbolList.join(',')}`;
@@ -195,5 +210,13 @@ router.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
+/**
+ * Removes duplicate values from an array.
+ * @param {Array} array - The array to remove duplicates from.
+ * @returns {Array} A new array with only unique values.
+ */
+function removeDuplicates(strings) {
+  return [...new Set(strings)];
+}
 
 module.exports = router;
