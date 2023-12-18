@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const redis = require('redis');
+const rateLimit = require('axios-rate-limit');
 
 const router = express.Router();
 const redisClient = redis.createClient({
@@ -8,100 +9,121 @@ const redisClient = redis.createClient({
 });
 redisClient.connect();
 
-let rateLimitTimer = null;
+const http = rateLimit(axios.create(), { maxRequests: 29, perMilliseconds: 60000 });
 
-const setRateLimitTimer = () => {
-  if (!rateLimitTimer) {
-    rateLimitTimer = setTimeout(() => {
-      rateLimitTimer = null;
-    }, 60000); // Set timer for 1 minute
-  }
+// Object to hold the queue of symbols and their response handlers
+const priceSymbolQueue = {
+  symbols: new Set(),
+  handlers: [],
+  timer: null
 };
 
-const getSecondsUntilRateLimitEnds = () => {
-  if (rateLimitTimer) {
-    const timeLeft = Math.ceil((rateLimitTimer._idleStart + rateLimitTimer._idleTimeout - process.uptime() * 1000) / 1000);
-    return timeLeft > 0 ? timeLeft : 0;
-  }
-  return 0;
+const dataSymbolQueue = {
+  symbols: new Set(),
+  handlers: [],
+  timer: null
 };
 
-const handleRateLimit = (res) => {
-  const timeLeft = getSecondsUntilRateLimitEnds();
-  res.status(429).send(`Sorry, too many requests at this time, please wait ${timeLeft} more seconds and refresh`);
-};
+// Function to process the queued symbols
+function processSymbolQueue() {
+  const symbolsToFetch = Array.from(priceSymbolQueue.symbols).join(',');
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(symbolsToFetch)}&vs_currencies=usd&include_last_updated_at=true`;
 
-router.get('/prices', async (req, res) => {
+  axios.get(url).then(response => {
+    const data = response.data;
+    // Call each handler with the corresponding data
+    priceSymbolQueue.handlers.forEach(handler => {
+      const symbolData = {};
+      handler.symbols.forEach(symbol => {
+        symbolData[symbol] = data[symbol] || null;
+      });
+      handler.res.json(symbolData);
+    });
+  }).catch(error => {
+    // Handle errors by sending an error response to all handlers
+    priceSymbolQueue.handlers.forEach(handler => {
+      handler.res.status(500).send('Error fetching prices');
+    });
+  }).finally(() => {
+    // Reset the queue and timer
+    priceSymbolQueue.symbols.clear();
+    priceSymbolQueue.handlers = [];
+    priceSymbolQueue.timer = null;
+  });
+}
+
+// Function to process the queued symbol data requests
+async function processSymbolDataQueue() {
+  const symbolsToFetch = Array.from(dataSymbolQueue.symbols).join(',');
+  const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(symbolsToFetch)}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`;
+
   try {
-    const { symbols } = req.query;
-    if (!symbols) {
-      return res.status(400).send('No symbols provided');
-    }
-    const symbolList = symbols.split(',').join('%2C');
-    const cacheKey = `prices:${symbolList}`;
-    const cachedData = await redisClient.get(cacheKey);
+    const response = await http.get(url);
 
-    if (cachedData) {
-      console.log('Serving from cache');
-      return res.json(JSON.parse(cachedData));
-    }
+    // Store the response in cache
+    const cacheKey = `symbolData:${symbolsToFetch}`;
+    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data));
 
-    if (rateLimitTimer) return handleRateLimit(res);
-
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${symbolList}&vs_currencies=usd&include_last_updated_at=true`;
-    const response = await axios.get(url);
-
-    if (response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
-    }
-
-    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
-    res.json(response.data);
+    // Distribute the data to the appropriate handlers
+    dataSymbolQueue.handlers.forEach(handler => {
+      const relevantData = response.data.filter(item => handler.symbols.includes(item.id));
+      handler.res.json(relevantData);
+    });
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
-    }
-    console.error('Error fetching prices:', error);
-    res.status(500).send('Error fetching prices');
+    console.error('Error fetching symbol data:', error);
+    // Send an error response to all handlers
+    dataSymbolQueue.handlers.forEach(handler => {
+      handler.res.status(500).send('Error fetching symbol data');
+    });
+  } finally {
+    // Reset the queue and timer
+    dataSymbolQueue.symbols.clear();
+    dataSymbolQueue.handlers = [];
+    dataSymbolQueue.timer = null;
+  }
+}
+
+router.get('/prices', (req, res) => {
+  const { symbols } = req.query;
+  if (!symbols) {
+    return res.status(400).send('No symbols provided');
+  }
+
+  // Split the symbols and add them to the queue
+  const symbolList = symbols.split(',');
+  symbolList.forEach(symbol => priceSymbolQueue.symbols.add(symbol));
+
+  // Add the response handler to the queue
+  priceSymbolQueue.handlers.push({ symbols: symbolList, res });
+
+  // If the timer is not set, set it to process the queue after 2.5 seconds
+  if (!priceSymbolQueue.timer) {
+    priceSymbolQueue.timer = setTimeout(processSymbolQueue, 2500);
   }
 });
 
 router.get('/symbolData', async (req, res) => {
-  try {
-    const { symbols } = req.query;
-    if (!symbols) {
-      return res.status(400).send('No symbols provided');
-    }
-    const symbolList = symbols.split(',').join('%2C');
-    const cacheKey = `symbolData:${symbolList}`;
-    const cachedData = await redisClient.get(cacheKey);
+  const { symbols } = req.query;
+  if (!symbols) {
+    return res.status(400).send('No symbols provided');
+  }
+  const symbolList = symbols.split(',');
 
-    if (cachedData) {
-      console.log('Serving from cache');
-      return res.json(JSON.parse(cachedData));
-    }
+  // Check cache first before adding to the queue
+  const cacheKey = `symbolData:${symbolList.join(',')}`;
+  const cachedData = await redisClient.get(cacheKey);
+  if (cachedData) {
+    console.log('Serving from cache');
+    return res.json(JSON.parse(cachedData));
+  }
 
-    if (rateLimitTimer) return handleRateLimit(res);
+  // Add the symbols and the response handler to the queue
+  symbolList.forEach(symbol => dataSymbolQueue.symbols.add(symbol));
+  dataSymbolQueue.handlers.push({ symbols: symbolList, res });
 
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${symbolList}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`;
-    const response = await axios.get(url);
-
-    if (response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
-    }
-
-    await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
-    res.json(response.data);
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
-    }
-    console.error('Error fetching symbol data:', error);
-    res.status(500).send('Error fetching symbol data');
+  // If the timer is not set, set it to process the queue after 2.5 seconds
+  if (!dataSymbolQueue.timer) {
+    dataSymbolQueue.timer = setTimeout(processSymbolDataQueue, 2500);
   }
 });
 
@@ -119,22 +141,18 @@ router.get('/chartData', async (req, res) => {
       return res.json(JSON.parse(cachedData));
     }
 
-    if (rateLimitTimer) return handleRateLimit(res);
-
     const url = `https://api.coingecko.com/api/v3/coins/${symbol}/market_chart?vs_currency=usd&days=max`;
-    const response = await axios.get(url);
+    const response = await http.get(url);
 
     if (response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
+      return res.status(429).send('Too many requests, please try again later.');
     }
 
     await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
     res.json(response.data);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
+      return res.status(429).send('Too many requests, please try again later.');
     }
     console.error('Error fetching chart data:', error);
     res.status(500).send('Error fetching chart data');
@@ -155,22 +173,18 @@ router.get('/search', async (req, res) => {
       return res.json(JSON.parse(cachedData));
     }
 
-    if (rateLimitTimer) return handleRateLimit(res);
-
     const url = `https://api.coingecko.com/api/v3/search?query=${symbol}`;
-    const response = await axios.get(url);
+    const response = await http.get(url);
 
     if (response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
+      return res.status(429).send('Too many requests, please try again later.');
     }
 
     await redisClient.setEx(cacheKey, 160, JSON.stringify(response.data)); // Cache for 2.5 minutes
     res.json(response.data);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response && error.response.status === 429) {
-      setRateLimitTimer();
-      return handleRateLimit(res);
+      return res.status(429).send('Too many requests, please try again later.');
     }
     console.error('Error fetching search results:', error);
     res.status(500).send('Error fetching search results');
