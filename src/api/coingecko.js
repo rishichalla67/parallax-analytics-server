@@ -49,6 +49,13 @@ class SymbolSchema {
   }
 }
 
+class PriceDataSchema{
+  constructor(symbolData){
+    this.usd = symbolData.current_price,
+    this.last_updated_at = new Date(symbolData.last_updated).getTime() / 1000 
+  }
+}
+
 const db = getDatabase();
 const firebaseCryptoSymbolsRef = db.ref('crypto/symbols');
 const firebaseCryptoSymbolChartDataRef = db.ref('crypto/symbolsChartData');
@@ -173,6 +180,13 @@ router.get('/symbols/chartData', async (req, res) => {
     return res.status(400).send('No symbol provided');
   }
   try {
+    const cacheKey = `symbolChartData:${symbol}`;
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log(`Retrieved redis cached data for symbol: ${symbol}`);
+      res.status(200).send(JSON.parse(cachedData));
+      return;
+    }
     const symbolChartSnapshot = await firebaseCryptoSymbolChartDataRef.child(symbol).get();
     if (symbolChartSnapshot.exists()) {
       let dbResponse = symbolChartSnapshot.val();
@@ -195,14 +209,15 @@ router.get('/symbols/chartData', async (req, res) => {
         ...response.data,
         last_updated: Date.now()
       };
+      await redisClient.setEx(cacheKey, CHART_DATA_REFRESH_TIMER_MINUTES * 60, JSON.stringify(chartDataWithTimestamp));
       firebaseCryptoSymbolChartDataRef.child(symbol).set(chartDataWithTimestamp);
       // console.log(`${new Date().toISOString()} GET /symbol/chartData response data: ${JSON.stringify(chartDataWithTimestamp)}`);
       res.status(201).send(chartDataWithTimestamp);
     }
   }
   catch (error) {
-    console.log(`${new Date().toISOString()} GET /symbols/chartData error: ${error}`);
-    res.status(500).send(`Internal Server Error: ${error}`);
+    console.log(`${new Date().toISOString()} ERROR: GET /symbols/chartData - ${error}`);
+    res.status(500).send(`${error}`);
   }
 });
 
@@ -217,27 +232,40 @@ router.get('/symbols/prices', async (req, res) => {
   let symbolList = removeDuplicates(symbols.split(','));
 
   try {
+    // const cachedData = await redisClient.get(cacheKey);
+    // if (cachedData) {
+    //   console.log(`Retrieved redis cached data for symbols: ${symbolList.join(",")}`);
+    //   res.status(200).send(JSON.parse(cachedData));
+    //   return;
+    // }
     let symbolsPriceData = [];
     let symbolsToFetch = [];
     // Fetch each symbol's data from Firebase
     for (const symbol of symbolList) {
-      const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
-      if (symbolSnapshot.exists()) {
-        symbolsPriceData[symbol] = symbolSnapshot.val();
+      // Check Order: Redis Cache -> Firebase DB -> Call CoinGecko and update DB
+      const symbolCacheData = await redisClient.get(`symbolPriceData:${symbol}`);
+      if (symbolCacheData) {
+        console.log(`Using redis cache for data`);
+        symbolsPriceData[symbol] = JSON.parse(symbolCacheData);
+      }
+      else{
+        const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
+        if (symbolSnapshot.exists()) {
+          symbolsPriceData[symbol] = symbolSnapshot.val();
+          updateRedisData(symbolSnapshot.val(), `symbolPriceData:${symbol}`, 360);
+          // Check if the last update was more than REFRESH_TIMER_MINUTES minutes ago
+          const currentTime = Date.now();
+          const lastUpdated = new Date(symbolsPriceData[symbol]?.last_updated);
+          const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // REFRESH_TIMER_MINUTES in milliseconds
 
-        // Check if the last update was more than REFRESH_TIMER_MINUTES minutes ago
-        const currentTime = Date.now();
-        const lastUpdated = new Date(symbolsPriceData[symbol]?.last_updated);
-        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // REFRESH_TIMER_MINUTES in milliseconds
-
-        if (currentTime - lastUpdated >  refreshTimer) {
-          console.log(`Expired symbol data, added to refresh list, ${symbol}`)
+          if (currentTime - lastUpdated >  refreshTimer) {
+            console.log(`Expired symbol data, added to refresh list, ${symbol}`)
+            symbolsToFetch.push(symbol);
+          }
+        } else {
+          // If a symbol is not found, you can decide to omit it or return null
           symbolsToFetch.push(symbol);
         }
-      } else {
-        // If a symbol is not found, you can decide to omit it or return null
-        symbolsToFetch.push(symbol);
-
       }
     }
     if(symbolsToFetch.length > 0){
@@ -246,40 +274,45 @@ router.get('/symbols/prices', async (req, res) => {
       
       const logMessage = `GET /symbols request for missing symbols ${symbolsToFetch.join(",")}`;
       console.log(`${new Date().toISOString()} ${logMessage}`);
+      
       axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
         .then(response => {
           console.log(logMessage, response.status);
           console.log(`${new Date().toISOString()} GET /symbols response status: ${response.status}`);
+          for (const data of response.data) {
+            updateRedisData(new PriceDataSchema(data), `symbolPriceData:${data.id}`, 360);
+          }
         })
         .catch(error => {
           if (error.response && error.response.status === 429) {
-            console.log(`${new Date().toISOString()} Coingecko API rate limit exceeded: ${error}`);
+            console.log(`${new Date().toISOString()} ${error}`);
           } else {
-            console.log(`${new Date().toISOString()} Error fetching symbols: ${error}`);
+            console.log(`${new Date().toISOString()} ${error}`);
           }
         });
     }
-
-    
     const responseData = symbolList.reduce((acc, symbol) => {
       if (symbolsPriceData[symbol]) {
-        acc[symbol] = {
-          usd: symbolsPriceData[symbol].current_price,
-          last_updated_at: new Date(symbolsPriceData[symbol].last_updated).getTime() / 1000
-        };
+        acc[symbol] = new PriceDataSchema(symbolsPriceData[symbol]);
       }
       return acc;
     }, {});
+    
     res.json(responseData);
   } catch (error) {
-    console.log(`${new Date().toISOString()} GET /symbols error: ${error}`);
-    res.status(500).send(`Internal Server Error: ${error}`);
+    console.log(`${new Date().toISOString()} ERROR: GET /symbols/prices ${error}`);
+    res.status(500).send(`${error}`);
   }
 });
 
 router.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
+
+async function updateRedisData(data, cacheKey, cacheTime) {
+  await redisClient.setEx(cacheKey, cacheTime, JSON.stringify(data));
+  console.log(`Cached ${cacheKey} for 5 minutes`);
+}
 
 function removeDuplicates(strings) {
   return [...new Set(strings)];
