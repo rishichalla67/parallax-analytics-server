@@ -55,8 +55,8 @@ const firebaseCryptoSymbolChartDataRef = db.ref('crypto/symbolsChartData');
 
 const router = express.Router();
 const redisClient = redis.createClient({
-  // url: `${process.env.REDIS_URL}` 
-  url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
+  url: `${process.env.REDIS_URL}` 
+  // url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
 });
 redisClient.connect();
 
