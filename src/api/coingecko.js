@@ -6,7 +6,7 @@ const fs = require('fs');
 const { getDatabase } = require('firebase-admin/database');
 var admin = require("firebase-admin");
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
-let REFRESH_TIMER_MINUTES = 10;
+let REFRESH_TIMER_MINUTES = 30;
 let CHART_DATA_REFRESH_TIMER_MINUTES = 60;
 
 admin.initializeApp({
@@ -15,6 +15,9 @@ admin.initializeApp({
 });
 // LOG
 const logIdentifier = `logs/log_${new Date().toISOString().split('T')[0]}.txt`;
+
+// Variable to track the number of API calls
+let apiCallCount = 0;
 
 class SymbolSchema {
   constructor(symbolData) {
@@ -58,6 +61,8 @@ const redisClient = redis.createClient({
 redisClient.connect();
 
 router.get('/symbols', async (req, res) => {
+  apiCallCount++; // Increment the API call count
+  console.log(apiCallCount);
   const { symbols } = req.query;
   if (!symbols) {
     return res.status(400).send('No symbols provided');
@@ -101,6 +106,13 @@ router.get('/symbols', async (req, res) => {
         .then(response => {
           console.log(logMessage, response.status);
           console.log(`${new Date().toISOString()} GET /symbols response status: ${response.status}`);
+        })
+        .catch(error => {
+          if (error.response && error.response.status === 429) {
+            console.log(`${new Date().toISOString()} Coingecko API rate limit exceeded: ${error}`);
+          } else {
+            console.log(`${new Date().toISOString()} Error fetching symbols: ${error}`);
+          }
         });
     }
 
@@ -113,6 +125,8 @@ router.get('/symbols', async (req, res) => {
 
 
 router.post('/symbols', async (req, res) => {
+  apiCallCount++; // Increment the API call count
+  console.log(apiCallCount);
   const { symbols } = req.query;
   if (!symbols) {
     return res.status(400).send('No symbols provided');
@@ -151,6 +165,8 @@ router.post('/symbols', async (req, res) => {
 });
 
 router.get('/symbols/chartData', async (req, res) => {
+  apiCallCount++; // Increment the API call count
+  console.log(apiCallCount);
   const { symbol } = req.query;
   let queryCoingecko = false;
   if (!symbol) {
@@ -186,6 +202,77 @@ router.get('/symbols/chartData', async (req, res) => {
   }
   catch (error) {
     console.log(`${new Date().toISOString()} GET /symbols/chartData error: ${error}`);
+    res.status(500).send(`Internal Server Error: ${error}`);
+  }
+});
+
+router.get('/symbols/prices', async (req, res) => {
+  apiCallCount++; // Increment the API call count
+  console.log(apiCallCount);
+  const { symbols } = req.query;
+  if (!symbols) {
+    return res.status(400).send('No symbols provided');
+  }
+  // Split the symbols string into an array and remove duplicates
+  let symbolList = removeDuplicates(symbols.split(','));
+
+  try {
+    let symbolsPriceData = [];
+    let symbolsToFetch = [];
+    // Fetch each symbol's data from Firebase
+    for (const symbol of symbolList) {
+      const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
+      if (symbolSnapshot.exists()) {
+        symbolsPriceData[symbol] = symbolSnapshot.val();
+
+        // Check if the last update was more than REFRESH_TIMER_MINUTES minutes ago
+        const currentTime = Date.now();
+        const lastUpdated = new Date(symbolsPriceData[symbol]?.last_updated);
+        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // REFRESH_TIMER_MINUTES in milliseconds
+
+        if (currentTime - lastUpdated >  refreshTimer) {
+          console.log(`Expired symbol data, added to refresh list, ${symbol}`)
+          symbolsToFetch.push(symbol);
+        }
+      } else {
+        // If a symbol is not found, you can decide to omit it or return null
+        symbolsToFetch.push(symbol);
+
+      }
+    }
+    if(symbolsToFetch.length > 0){
+      // Call POST /symbol with the symbol that was not found
+      const serverHost = req.protocol + '://' + req.get('host');
+      
+      const logMessage = `GET /symbols request for missing symbols ${symbolsToFetch.join(",")}`;
+      console.log(`${new Date().toISOString()} ${logMessage}`);
+      axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
+        .then(response => {
+          console.log(logMessage, response.status);
+          console.log(`${new Date().toISOString()} GET /symbols response status: ${response.status}`);
+        })
+        .catch(error => {
+          if (error.response && error.response.status === 429) {
+            console.log(`${new Date().toISOString()} Coingecko API rate limit exceeded: ${error}`);
+          } else {
+            console.log(`${new Date().toISOString()} Error fetching symbols: ${error}`);
+          }
+        });
+    }
+
+    
+    const responseData = symbolList.reduce((acc, symbol) => {
+      if (symbolsPriceData[symbol]) {
+        acc[symbol] = {
+          usd: symbolsPriceData[symbol].current_price,
+          last_updated_at: new Date(symbolsPriceData[symbol].last_updated).getTime() / 1000
+        };
+      }
+      return acc;
+    }, {});
+    res.json(responseData);
+  } catch (error) {
+    console.log(`${new Date().toISOString()} GET /symbols error: ${error}`);
     res.status(500).send(`Internal Server Error: ${error}`);
   }
 });
