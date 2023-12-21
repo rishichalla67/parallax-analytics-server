@@ -1,98 +1,97 @@
 const express = require('express');
 const axios = require('axios');
 const redis = require('redis');
-const rateLimit = require('axios-rate-limit');
+// const SymbolSchema = require('../../resources/schemas/SymbolSchema');
+const { getDatabase } = require('firebase-admin/database');
+var admin = require("firebase-admin");
+var serviceAccount = require("../../resources/firebase/parallax-analytics-server-firebase-adminsdk-nq2f4-1cc0a7394d.json");
+let REFRESH_TIMER_MINUTES = 5;
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://parallax-analytics-server-default-rtdb.firebaseio.com"
+});
+
+class SymbolSchema {
+  constructor(symbolData) {
+      this.id = symbolData.id; // "bitcoin"
+      this.symbol = symbolData.symbol; // "btc"
+      this.name = symbolData.name; // "Bitcoin"
+      this.image = symbolData.image; // "https://assets.coingecko.com/coins/images/1/large/bitcoin.png?1696501400"
+      this.current_price = symbolData.current_price; // 43630
+      this.market_cap = symbolData.market_cap; // 854012244623
+      this.market_cap_rank = symbolData.market_cap_rank; // 1
+      this.fully_diluted_valuation = symbolData.fully_diluted_valuation; // 916139924604
+      this.total_volume = symbolData.total_volume; // 28415939279
+      this.high_24h = symbolData.high_24h; // 44201
+      this.low_24h = symbolData.low_24h; // 42238
+      this.price_change_24h = symbolData.price_change_24h; // 1326.15
+      this.price_change_percentage_24h = symbolData.price_change_percentage_24h; // 3.1348
+      this.market_cap_change_24h = symbolData.market_cap_change_24h; // 25936223830
+      this.market_cap_change_percentage_24h = symbolData.market_cap_change_percentage_24h; // 3.13211
+      this.circulating_supply = symbolData.circulating_supply;
+      this.total_supply = symbolData.total_supply;
+      this.max_supply = symbolData.max_supply;
+      this.updateLast24Hr = true;
+  }
+}
+
+const db = getDatabase();
+const firebaseCryptoSymbolsRef = db.ref('crypto/symbols');
 
 const router = express.Router();
 const redisClient = redis.createClient({
-  url: `${process.env.REDIS_URL}` 
-  // url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
+  // url: `${process.env.REDIS_URL}` 
+  url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
 });
 redisClient.connect();
 
-const http = rateLimit(axios.create(), { maxRequests: 29, perMilliseconds: 60000 });
+router.get('/symbols', async (req, res) => {
+  const { symbols } = req.query;
+  if (!symbols) {
+    return res.status(400).send('No symbols provided');
+  }
+  // Split the symbols string into an array and remove duplicates
+  let symbolList = removeDuplicates(symbols.split(','));
 
-// Object to hold the queue of symbols and their response handlers
-const priceSymbolQueue = {
-  symbols: new Set(),
-  handlers: [],
-  timer: null
-};
-
-const dataSymbolQueue = {
-  symbols: new Set(),
-  handlers: [],
-  timer: null
-};
-
-// Function to process the queued symbols
-async function processSymbolQueue() {
   try {
-    const symbolsToFetch = Array.from(priceSymbolQueue.symbols).join(',');
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(symbolsToFetch)}&vs_currencies=usd&include_last_updated_at=true`;
-    const response = await axios.get(url);
-    const data = response.data;
-    // Store each symbol's data in cache separately
-    for (const [symbol, priceData] of Object.entries(data)) {
-      const cacheKey = `priceData:${symbol}`;
-      await redisClient.setEx(cacheKey, 600, JSON.stringify(priceData));
-    }
+    let symbolsData = [];
+    let symbolsToFetch = [];
+    // Fetch each symbol's data from Firebase
+    for (const symbol of symbolList) {
+      const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
+      if (symbolSnapshot.exists()) {
+        symbolsData.push(symbolSnapshot.val());
+        // Check if the last update was more than 5 minutes ago
+        const currentTime = Date.now();
+        const lastUpdated = new Date(symbolsData[symbol]?.last_updated || 0);
+        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // 5 minutes in milliseconds
+        if (currentTime - lastUpdated > refreshTimer) {
+          console.log("Expired symbol data, added to refresh list, {}", symbol)
+          symbolsToFetch.push(symbol);
+        }
+      } else {
+        // If a symbol is not found, you can decide to omit it or return null
+        symbolsToFetch.push(symbol);
 
-    priceSymbolQueue.handlers.forEach(handler => {
-      // Combine cached responses with the new data
-      const combinedData = { ...handler.cachedResponses };
-      for (const [symbol, priceData] of Object.entries(data)) {
-        combinedData[symbol] = priceData;
       }
-      handler.res.json(combinedData);
-    });
-  } catch (error) {
-    console.error('Error fetching or caching prices:', error);
-    // Handle errors by sending an error response to all handlers
-    priceSymbolQueue.handlers.forEach(handler => {
-      handler.res.status(500).send('Error fetching prices');
-    });
-  } finally {
-    // Reset the queue and timer
-    priceSymbolQueue.symbols.clear();
-    priceSymbolQueue.handlers = [];
-    priceSymbolQueue.timer = null;
-  }
-}
-
-async function processSymbolDataQueue() {
-  try {
-    const symbolsToFetch = Array.from(dataSymbolQueue.symbols).join(',');
-    const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(symbolsToFetch)}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`;
-    const response = await axios.get(url);
-    const data = response.data;
-    // Store each symbol's data in cache separately
-    for (const symbolData of data) {
-      const cacheKey = `symbolData:${symbolData.id}`;
-      await redisClient.setEx(cacheKey, 1500, JSON.stringify(symbolData));
+    }
+    if(symbolsToFetch.length > 0){
+      // Call POST /symbol with the symbol that was not found
+      const serverHost = req.protocol + '://' + req.get('host');
+      axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
+        .then(response => {
+          console.log(`POST /symbol response for missing symbols ${symbolsToFetch.join(",")}:`);
+        });
     }
 
-    dataSymbolQueue.handlers.forEach(handler => {
-      // Combine cached responses with the new data
-      const combinedData = [...handler.cachedResponses];
-      combinedData.push(...data);
-      handler.res.json(combinedData);
-    });
+    res.json(symbolsData);
   } catch (error) {
-    console.error('Error fetching or caching prices:', error);
-    // Handle errors by sending an error response to all handlers
-    dataSymbolQueue.handlers.forEach(handler => {
-      handler.res.status(500).send('Error fetching prices');
-    });
-  } finally {
-    // Reset the queue and timer
-    dataSymbolQueue.symbols.clear();
-    dataSymbolQueue.handlers = [];
-    dataSymbolQueue.timer = null;
+    res.status(500).send(`Internal Server Error: ${error}`);
   }
-}
+});
 
-router.get('/prices', async (req, res) => {
+
+router.post('/symbols', async (req, res) => {
   const { symbols } = req.query;
   if (!symbols) {
     return res.status(400).send('No symbols provided');
@@ -101,72 +100,28 @@ router.get('/prices', async (req, res) => {
   let symbolListDups = symbols.split(',');
   let symbolList = removeDuplicates(symbolListDups);
 
-  // Check cache for each symbol and only queue those not in cache
-  let symbolsToFetch = [];
-  let cachedResponses = {};
-  for (const symbol of symbolList) {
-    const symbolCacheKey = `priceData:${symbol}`;
-    const cachedData = await redisClient.get(symbolCacheKey);
-    if (cachedData) {
-      cachedResponses[symbol] = JSON.parse(cachedData);
-    } else {
-      symbolsToFetch.push(symbol);
-    }
-  }
-  if (Object.keys(cachedResponses).length === symbolList.length) {
-    console.log('Serving all symbols from cache');
-    return res.json(cachedResponses);
-  }
-  else{
-    symbolsToFetch.forEach(symbol => priceSymbolQueue.symbols.add(symbol));
-    // Include cached responses with the handler in a key:value format
-    priceSymbolQueue.handlers.push({ symbols: symbolList, res, cachedResponses });
-  }
-
-  // If the timer is not set, set it to process the queue after .0 seconds
-  if (!priceSymbolQueue.timer) {
-    priceSymbolQueue.timer = setTimeout(processSymbolQueue, 0);
-  }
-});
-
-
-
-router.get('/symbolData', async (req, res) => {
-  const { symbols } = req.query;
-  if (!symbols) {
-    return res.status(400).send('No symbols provided');
-  }
-  let dataSymbolListDups = symbols.split(',');
-
-  // Remove any repeat values in the symbols list
-  let symbolList = removeDuplicates(dataSymbolListDups);
-
-  // Check cache for each symbol and only queue those not in cache
-  let symbolsToFetch = [];
-  let cachedResponses = [];
-  for (const symbol of symbolList) {
-    const symbolCacheKey = `symbolData:${symbol}`;
-    const cachedData = await redisClient.get(symbolCacheKey);
-    if (cachedData) {
-      cachedResponses.push(JSON.parse(cachedData));
-    } else {
-      symbolsToFetch.push(symbol);
-    }
-  }
-  if (Object.keys(cachedResponses).length === symbolList.length) {
-    console.log('Serving all symbols from cache');
-    return res.json(cachedResponses);
-  }
-  else{
-    // Add the symbols and the response handler to the queue
-    symbolsToFetch.forEach(symbol => dataSymbolQueue.symbols.add(symbol));
-    // Include cached responses with the handler
-    dataSymbolQueue.handlers.push({ symbols: symbolList, res, cachedResponses });
-  }  
-
-  // If the timer is not set, set it to process the queue after .0 seconds
-  if (!dataSymbolQueue.timer) {
-    dataSymbolQueue.timer = setTimeout(processSymbolDataQueue, 0);
+  try {
+    const response = await axios.get(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${symbolList}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`);
+    const symbolData = response.data;
+    //Format Obj for Posting
+    let dataToSave = []
+    symbolList.map(symbol => {
+      if(symbolData){
+        symbolData.map(data => {
+          if(symbol === data.id){
+            firebaseCryptoSymbolsRef.child(symbol).set(data);
+            let dataInSchema = new SymbolSchema(data);
+            dataToSave.push({
+              symbol: symbol,
+              data: dataInSchema
+            });
+          }
+        })
+      }
+    })
+    res.status(200).send(dataToSave);
+  } catch (error) {
+    res.status(500).send(`Internal Server Error: ${error}`);
   }
 });
 
@@ -177,23 +132,5 @@ router.get('/health', (req, res) => {
 function removeDuplicates(strings) {
   return [...new Set(strings)];
 }
-
-// Function to refresh popular coins cache
-function refreshPopularCoinsCache() {
-  axios.get('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1')
-  .then(response => {
-    const topCoins = response.data.map(coin => coin.id);
-    const symbols = topCoins.join(',');
-    http.get(`/prices?symbols=${encodeURIComponent(symbols)}`)
-      .then(response => console.log('Cache refreshed for popular coins.'))
-      .catch(error => console.error('Error refreshing cache for popular coins:', error));
-  })
-  .catch(error => console.error('Error fetching top coins:', error));
-  const symbols = topCoins.join(',');
-  http.get(`/prices?symbols=${encodeURIComponent(symbols)}`)
-    .then(response => console.log('Cache refreshed for popular coins.'))
-    .catch(error => console.error('Error refreshing cache for popular coins:', error));
-}
-
 
 module.exports = router;
