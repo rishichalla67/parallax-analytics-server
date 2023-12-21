@@ -1,15 +1,18 @@
 const express = require('express');
 const axios = require('axios');
 const redis = require('redis');
+const fs = require('fs');
 // const SymbolSchema = require('../../resources/schemas/SymbolSchema');
 const { getDatabase } = require('firebase-admin/database');
 var admin = require("firebase-admin");
-var serviceAccount = require("../../resources/firebase/parallax-analytics-server-firebase-adminsdk-nq2f4-1cc0a7394d.json");
-let REFRESH_TIMER_MINUTES = 5;
+var serviceAccount = require("../../resources/firebase/firebase-admin.json");
+let REFRESH_TIMER_MINUTES = 10;
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://parallax-analytics-server-default-rtdb.firebaseio.com"
 });
+// LOG
+const logIdentifier = `logs/log_${new Date().toISOString().replace(/T/, '-').replace(/\..+/, '')}.txt`;
 
 class SymbolSchema {
   constructor(symbolData) {
@@ -31,7 +34,13 @@ class SymbolSchema {
       this.circulating_supply = symbolData.circulating_supply;
       this.total_supply = symbolData.total_supply;
       this.max_supply = symbolData.max_supply;
-      this.updateLast24Hr = true;
+      this.price_change_percentage_14d_in_currency = symbolData.price_change_percentage_14d_in_currency;
+      this.price_change_percentage_1h_in_currency = symbolData.price_change_percentage_1h_in_currency;
+      this.price_change_percentage_1y_in_currency = symbolData.price_change_percentage_1y_in_currency;
+      this.price_change_percentage_200d_in_currency = symbolData.price_change_percentage_200d_in_currency;
+      this.price_change_percentage_24h_in_currency = symbolData.price_change_percentage_24h_in_currency;
+      this.price_change_percentage_30d_in_currency = symbolData.price_change_percentage_30d_in_currency;
+      this.price_change_percentage_7d_in_currency = symbolData.price_change_percentage_7d_in_currency;
   }
 }
 
@@ -55,18 +64,22 @@ router.get('/symbols', async (req, res) => {
 
   try {
     let symbolsData = [];
+    let timerSymbolsData = [];
     let symbolsToFetch = [];
     // Fetch each symbol's data from Firebase
     for (const symbol of symbolList) {
       const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
       if (symbolSnapshot.exists()) {
+        timerSymbolsData[symbol] = symbolSnapshot.val();
         symbolsData.push(symbolSnapshot.val());
+
         // Check if the last update was more than 5 minutes ago
         const currentTime = Date.now();
-        const lastUpdated = new Date(symbolsData[symbol]?.last_updated || 0);
-        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // 5 minutes in milliseconds
-        if (currentTime - lastUpdated > refreshTimer) {
-          console.log("Expired symbol data, added to refresh list, {}", symbol)
+        const lastUpdated = new Date(timerSymbolsData[symbol]?.last_updated);
+        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // minutes in milliseconds
+
+        if (currentTime - lastUpdated >  refreshTimer) {
+          console.log(`Expired symbol data, added to refresh list, ${symbol}`)
           symbolsToFetch.push(symbol);
         }
       } else {
@@ -78,14 +91,19 @@ router.get('/symbols', async (req, res) => {
     if(symbolsToFetch.length > 0){
       // Call POST /symbol with the symbol that was not found
       const serverHost = req.protocol + '://' + req.get('host');
+      
+      const logMessage = `GET /symbols request for missing symbols ${symbolsToFetch.join(",")}`;
+      fs.appendFileSync(logIdentifier, logMessage + "\n");
       axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
         .then(response => {
-          console.log(`POST /symbol response for missing symbols ${symbolsToFetch.join(",")}:`);
+          console.log(logMessage, response.status);
+          fs.appendFileSync(logIdentifier, `GET /symbols response status: ${response.status}\n`);
         });
     }
 
     res.json(symbolsData);
   } catch (error) {
+    fs.appendFileSync(logIdentifier, `GET /symbols error: ${error}\n`);
     res.status(500).send(`Internal Server Error: ${error}`);
   }
 });
@@ -101,6 +119,8 @@ router.post('/symbols', async (req, res) => {
   let symbolList = removeDuplicates(symbolListDups);
 
   try {
+    const logMessage = `POST request to CoinGecko API for symbols: ${symbolList.join(",")}`;
+    fs.appendFileSync(logIdentifier, logMessage + "\n");
     const response = await axios.get(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${symbolList}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`);
     const symbolData = response.data;
     //Format Obj for Posting
@@ -119,8 +139,10 @@ router.post('/symbols', async (req, res) => {
         })
       }
     })
+    fs.appendFileSync(logIdentifier, `POST /symbols response data: ${JSON.stringify(dataToSave)}\n`);
     res.status(200).send(dataToSave);
   } catch (error) {
+    fs.appendFileSync(logIdentifier, `POST /symbols error: ${error}\n`);
     res.status(500).send(`Internal Server Error: ${error}`);
   }
 });

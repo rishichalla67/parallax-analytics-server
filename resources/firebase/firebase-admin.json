@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "parallax-analytics-server",
+  "private_key_id": "1cc0a7394de93df5977adc8ca746b134fa857b34",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+RUk11INFk0ha\nwRJ5+sLxLrUvm50Q8Xf5+zLliqp1oHQb5avymHIsTXcpFZ+oYUBHoZzv/gs6euou\niXAVgvtpiyJ77v/Klt64oXFcgVAoRB/8t7G6WCL4lmXVa9vL8yZOJ5cbKxjxtznd\nf36falDWtRNjPqlwRevHOve4tSaxnY9o/5IAQapf9eG6t1i7IRJ4UK9KiR34mJ7G\nUHuc5vaxzPUmso0/5bFV9nIoGMbGVvTkLs7cxeGIVEoGuD+TZ/kyNAa2sgZ/J37k\n1/mbLzbZd5R70L0SJAB30ail7a04mHhCG+43JZZX/Hr/p3Sb3FE+pEzrpLIvmXy4\nvw8a6e0ZAgMBAAECggEACDWoVLrgXR/DAbqOWbKtN2QOekkcbBY6rkiddhQebb2h\nNOK3oWnclX3+14EGLgWK3DN5qjCS3qzsPMzMiBdNw9rEuGnkBWp11x2pex1d6t32\n9c2r6U6TO0NkOKoE4sDYalKH+7jVtk4BvP5h5W6jaNgz1eTmwXWObdsr/P8yoJgz\nkYm8X1Z1OUjqzCJmtiBKTdzCOpFb96IdShlRDd4zQvlWrhX0eiHEXQW2icm+4wnu\nnzkC9yZtNkZC3Ozq29TfjiPcAbrmiCHJVT840XHCZuosKCr7z5b7TDkuw5L8RSFF\nqOyh6uy/T2/nCt0SXcxPm81BrkIIi8HCgTHE6eUSJwKBgQDflM6xd0XC9q2azXAU\nYRM30Fd2vjQyq5P+EUuc0MZhCLzGQvYxJHiCRZ/gpBNuB0zKKUrRyRBmJH4TXyiD\nb99ALe82fEsyLdAs300NYPVEzYd3F/ixB8Wfe1ejP70ZhZolaE19iUlnr2L3ZIZm\n1ciO62JNhfx9sdNKZJM8y4KvywKBgQDZ3AJunme7eeMj3G++bAUDb+nNUsuotw8i\n8Yzi2sfQ6wgyhdOYgmjzCjcc8LWU/WR/nXnDHJX4GZziU7VQtbe0QKGgNTB7NgG6\n+cS8nhn90K2ILBGBucssbw/iHRZpgsLXxkpVLWPVZbEx9P9GRxMX9BcoSULGwpTJ\nn1LGm0pyKwKBgQCLKNzJmppCMjV1775+ALnseHGoB9UHYMHZVjyA23VOOhj9Mfp4\nNeIH+3v6X0V0q3iBL9hQ4NujJ72NIyJdRMlo8e49NHm9PsSe2VHlLN8cNuzFFJeG\n4HaBwEyY4Hg7pWt/Mv9gTo3wyjpIDzqUUSXmxt1FsUqplYAUgqseIPEzpwKBgQDF\nz6BdtHLXpRp6i0LjEc2Ti2As0EqfTGfwAIc9zAy2Q1HUHfM8fNyyIMpd+qnFODay\nMNhIMoJxHUB3uC3ftL+yaSTYBLOajDUSAouB/8P11C5cgDb9JSe3lrhDRMn+z33+\n0crYgDgvoQA9LglDVHGfxD/qkmqRckgKsiFEt+fmtQKBgH4K4og7knm6BE4jON4i\nf0EsTSGInxc9b9AqRX0pOCf1bnUQRSQRSKYcGvqEDfABVajZuBeMPujycmY+2h8J\noVoCJuJyNmlCVddd9EVYLJkJHPMhxnoE1nSnFNnCNov5c6fMIyFaz6dsQiFgSoJW\n46/wToEPS54qEVrIThvjPwKJ\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-nq2f4@parallax-analytics-server.iam.gserviceaccount.com",
+  "client_id": "105057077880507793086",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-nq2f4%40parallax-analytics-server.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
