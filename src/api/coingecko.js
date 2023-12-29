@@ -59,263 +59,324 @@ class PriceDataSchema{
 const db = getDatabase();
 const firebaseCryptoSymbolsRef = db.ref('crypto/symbols');
 const firebaseCryptoSymbolChartDataRef = db.ref('crypto/symbolsChartData');
+const firebaseCryptoKujiraTransactions = db.ref('crypto/kujiraTransactions');
 
 const router = express.Router();
 const redisClient = redis.createClient({
-  url: `${process.env.REDIS_URL}` 
-  // url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
+  // url: `${process.env.REDIS_URL}` 
+  url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
 });
 redisClient.connect();
 
-router.get('/symbols', async (req, res) => {
-  apiCallCount++; // Increment the API call count
-  console.log(apiCallCount);
-  const { symbols } = req.query;
-  if (!symbols) {
-    return res.status(400).send('No symbols provided');
+router.get('/kujiraGhostBalance', async (req, res) => {
+  const { address, forceRefresh } = req.query;
+  if (!address) {
+    console.log(`${new Date().toISOString()} No kujira address provided in request`);
+    return res.status(400).send('No kujira address provided');
   }
-  // Split the symbols string into an array and remove duplicates
-  let symbolList = removeDuplicates(symbols.split(','));
-
-  try {
-    let symbolsData = [];
-    let timerSymbolsData = [];
-    let symbolsToFetch = [];
-    // Fetch each symbol's data from Firebase
-    for (const symbol of symbolList) {
-      const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
-      if (symbolSnapshot.exists()) {
-        timerSymbolsData[symbol] = symbolSnapshot.val();
-        symbolsData.push(symbolSnapshot.val());
-
-        // Check if the last update was more than 5 minutes ago
-        const currentTime = Date.now();
-        const lastUpdated = new Date(timerSymbolsData[symbol]?.last_updated);
-        const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // minutes in milliseconds
-
-        if (currentTime - lastUpdated >  refreshTimer) {
-          console.log(`Expired symbol data, added to refresh list, ${symbol}`)
-          symbolsToFetch.push(symbol);
-        }
-      } else {
-        // If a symbol is not found, you can decide to omit it or return null
-        symbolsToFetch.push(symbol);
-
-      }
-    }
-    if(symbolsToFetch.length > 0){
-      // Call POST /symbol with the symbol that was not found
-      const serverHost = req.protocol + '://' + req.get('host');
-      
-      const logMessage = `GET /symbols request for missing symbols ${symbolsToFetch.join(",")}`;
-      console.log(`${new Date().toISOString()} ${logMessage}`);
-      axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
-        .then(response => {
-          console.log(logMessage, response.status);
-          console.log(`${new Date().toISOString()} GET /symbols response status: ${response.status}`);
-        })
-        .catch(error => {
-          if (error.response && error.response.status === 429) {
-            console.log(`${new Date().toISOString()} Coingecko API rate limit exceeded: ${error}`);
+  let offset = 0;
+  let allData = [];
+  console.log(`${new Date().toISOString()} Fetching kujira transactions for address: ${address}`);
+  
+  firebaseCryptoKujiraTransactions.child(`${address}/ghost`).once('value', snapshot => {
+    const cachedData = snapshot.val();
+    const oneHour = (60 * 60 * 1000);
+    if (forceRefresh === "false" && snapshot.exists() && (Date.now() - cachedData.last_updated) < oneHour) {
+        console.log(`${new Date().toISOString()} Cached kujira transactions found for address: ${address}`);
+        calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data))
+         
+    } else {
+      const fetchAllData = async (address, offset) => {
+        try {
+          const response = await getKujiraAddressData(address, offset);
+          if (response.data && response.data.txs.length > 0) {
+            allData = allData.concat(response.data.txs);
+            console.log(`Completed querying ${offset+100} transactions...`)
+            return fetchAllData(address, offset + 100);
           } else {
-            console.log(`${new Date().toISOString()} Error fetching symbols: ${error}`);
+            return allData;
           }
-        });
-    }
-
-    res.json(symbolsData);
-  } catch (error) {
-    console.log(`${new Date().toISOString()} GET /symbols error: ${error}`);
-    res.status(500).send(`Internal Server Error: ${error}`);
-  }
-});
-
-
-router.post('/symbols', async (req, res) => {
-  apiCallCount++; // Increment the API call count
-  console.log(apiCallCount);
-  const { symbols } = req.query;
-  if (!symbols) {
-    return res.status(400).send('No symbols provided');
-  }
-
-  let symbolListDups = symbols.split(',');
-  let symbolList = removeDuplicates(symbolListDups);
-
-  try {
-    const logMessage = `POST request to CoinGecko API for symbols: ${symbolList.join(",")}`;
-    console.log(`${new Date().toISOString()} ${logMessage}`);
-    const response = await axios.get(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${symbolList}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=1h%2C24h%2C7d%2C14d%2C30d%2C200d%2C1y`);
-    const symbolData = response.data;
-    //Format Obj for Posting
-    let dataToSave = []
-    symbolList.map(symbol => {
-      if(symbolData){
-        symbolData.map(data => {
-          if(symbol === data.id){
-            firebaseCryptoSymbolsRef.child(symbol).set(data);
-            let dataInSchema = new SymbolSchema(data);
-            dataToSave.push({
-              symbol: symbol,
-              data: dataInSchema
-            });
-          }
-        })
-      }
-    })
-    // console.log(`${new Date().toISOString()} POST /symbols response data: ${JSON.stringify(dataToSave)}`);
-    res.status(200).send(dataToSave);
-  } catch (error) {
-    console.log(`${new Date().toISOString()} POST /symbols error: ${error}`);
-    res.status(500).send(`Internal Server Error: ${error}`);
-  }
-});
-
-router.get('/symbols/chartData', async (req, res) => {
-  apiCallCount++; // Increment the API call count
-  console.log(apiCallCount);
-  const { symbol } = req.query;
-  let queryCoingecko = false;
-  if (!symbol) {
-    return res.status(400).send('No symbol provided');
-  }
-  try {
-    const cacheKey = `symbolChartData:${symbol}`;
-    const cachedData = await redisClient.get(cacheKey);
-    if (cachedData) {
-      console.log(`Retrieved redis cached data for symbol: ${symbol}`);
-      res.status(200).send(JSON.parse(cachedData));
-      return;
-    }
-    const symbolChartSnapshot = await firebaseCryptoSymbolChartDataRef.child(symbol).get();
-    if (symbolChartSnapshot.exists()) {
-      let dbResponse = symbolChartSnapshot.val();
-      const currentTime = Date.now();
-      const lastUpdated = dbResponse?.last_updated;
-      const refreshTimer = CHART_DATA_REFRESH_TIMER_MINUTES * 60 * 1000; 
-      if (currentTime - lastUpdated >  refreshTimer) {
-        console.log(`Expired symbol data, added to refresh list, ${symbol}`)
-        queryCoingecko = true;
-      }
-      else{
-        // console.log(`${new Date().toISOString()} Data loaded from cache: ${JSON.stringify(symbolChartSnapshot.val())}`);
-        res.status(200).send(symbolChartSnapshot.val())
-      }
-    }else{queryCoingecko = true;}
-
-    if(queryCoingecko){
-      const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${symbol}/market_chart?vs_currency=usd&days=1`); 
-      const chartDataWithTimestamp = {
-        ...response.data,
-        last_updated: Date.now()
+        } catch (error) {
+          throw error;
+        }
       };
-      await redisClient.setEx(cacheKey, CHART_DATA_REFRESH_TIMER_MINUTES * 60, JSON.stringify(chartDataWithTimestamp));
-      firebaseCryptoSymbolChartDataRef.child(symbol).set(chartDataWithTimestamp);
-      // console.log(`${new Date().toISOString()} GET /symbol/chartData response data: ${JSON.stringify(chartDataWithTimestamp)}`);
-      res.status(201).send(chartDataWithTimestamp);
-    }
-  }
-  catch (error) {
-    console.log(`${new Date().toISOString()} ERROR: GET /symbols/chartData - ${error}`);
-    res.status(500).send(`${error}`);
-  }
-});
-
-router.get('/symbols/prices', async (req, res) => {
-  apiCallCount++; // Increment the API call count
-  console.log(apiCallCount);
-  const { symbols } = req.query;
-  if (!symbols) {
-    return res.status(400).send('No symbols provided');
-  }
-  // Split the symbols string into an array and remove duplicates
-  let symbolList = removeDuplicates(symbols.split(','));
-
-  try {
-    // const cachedData = await redisClient.get(cacheKey);
-    // if (cachedData) {
-    //   console.log(`Retrieved redis cached data for symbols: ${symbolList.join(",")}`);
-    //   res.status(200).send(JSON.parse(cachedData));
-    //   return;
-    // }
-    let symbolsPriceData = [];
-    let symbolsToFetch = [];
-    // Fetch each symbol's data from Firebase
-    for (const symbol of symbolList) {
-      // Check Order: Redis Cache -> Firebase DB -> Call CoinGecko and update DB
-      const symbolCacheData = await redisClient.get(`symbolPriceData:${symbol}`);
-      if (symbolCacheData) {
-        console.log(`Using redis cache for data`);
-        symbolsPriceData[symbol] = JSON.parse(symbolCacheData);
-      }
-      else{
-        const symbolSnapshot = await firebaseCryptoSymbolsRef.child(symbol).get();
-        if (symbolSnapshot.exists()) {
-          symbolsPriceData[symbol] = symbolSnapshot.val();
-          updateRedisData(symbolSnapshot.val(), `symbolPriceData:${symbol}`, 360);
-          // Check if the last update was more than REFRESH_TIMER_MINUTES minutes ago
-          const currentTime = Date.now();
-          const lastUpdated = new Date(symbolsPriceData[symbol]?.last_updated);
-          const refreshTimer = REFRESH_TIMER_MINUTES * 60 * 1000; // REFRESH_TIMER_MINUTES in milliseconds
-
-          if (currentTime - lastUpdated >  refreshTimer) {
-            console.log(`Expired symbol data, added to refresh list, ${symbol}`)
-            symbolsToFetch.push(symbol);
-          }
-        } else {
-          // If a symbol is not found, you can decide to omit it or return null
-          symbolsToFetch.push(symbol);
-        }
-      }
-    }
-    if(symbolsToFetch.length > 0){
-      // Call POST /symbol with the symbol that was not found
-      const serverHost = req.protocol + '://' + req.get('host');
       
-      const logMessage = `GET /symbols request for missing symbols ${symbolsToFetch.join(",")}`;
-      console.log(`${new Date().toISOString()} ${logMessage}`);
-      
-      axios.post(`${serverHost}/symbols?symbols=${symbolsToFetch.join(",")}`)
-        .then(response => {
-          console.log(logMessage, response.status);
-          console.log(`${new Date().toISOString()} GET /symbols response status: ${response.status}`);
-          for (const data of response.data) {
-            updateRedisData(new PriceDataSchema(data), `symbolPriceData:${data.id}`, 360);
-          }
+      fetchAllData(address, offset)
+        .then(data => {
+          console.log(`${new Date().toISOString()} Successfully fetched all kujira transactions`);
+          return filterKujiraGhost({ txs: data });
+        })
+        .then(processedData => {
+          console.log(`${new Date().toISOString()} Successfully processed Kujira data`);
+          const timestampedData = {
+            ...processedData,
+            last_updated: Date.now()
+          };
+          firebaseCryptoKujiraTransactions.child(`${address}/ghost`).set(timestampedData);
+          calculateGhostPnL(processedData).then(data => res.json(data))
         })
         .catch(error => {
-          if (error.response && error.response.status === 429) {
-            console.log(`${new Date().toISOString()} ${error}`);
-          } else {
-            console.log(`${new Date().toISOString()} ${error}`);
-          }
+          console.error(`${new Date().toISOString()} Error: ${error}`);
+          res.status(500).send('Internal Server Error');
         });
     }
-    const responseData = symbolList.reduce((acc, symbol) => {
-      if (symbolsPriceData[symbol]) {
-        acc[symbol] = new PriceDataSchema(symbolsPriceData[symbol]);
-      }
-      return acc;
-    }, {});
-    
-    res.json(responseData);
-  } catch (error) {
-    console.log(`${new Date().toISOString()} ERROR: GET /symbols/prices ${error}`);
-    res.status(500).send(`${error}`);
+  });
+});
+
+router.get('/kujiraWalletAssets', async (req, res) => {
+  const { address, forceRefresh } = req.query;
+  if (!address) {
+    console.log(`${new Date().toISOString()} No kujira address provided in request`);
+    return res.status(400).send('No kujira address provided');
   }
+  let offset = 0;
+  let allData = [];
+  console.log(`${new Date().toISOString()} Fetching kujira transactions for address: ${address}`);
+  
+  firebaseCryptoKujiraTransactions.child(`${address}/assets`).once('value', snapshot => {
+    const cachedData = snapshot.val();
+    const oneHour = (60 * 60 * 1000);
+    if (forceRefresh === "false" && snapshot.exists() && (Date.now() - cachedData.last_updated) < oneHour) {
+        console.log(`${new Date().toISOString()} Cached kujira transactions found for address: ${address}`);
+        calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data))
+         
+    } else {
+      const fetchAllData = async (address, offset) => {
+        try {
+          const response = await getKujiraAddressData(address, offset);
+          if (response.data && response.data.txs.length > 0) {
+            allData = allData.concat(response.data.txs);
+            console.log(`Completed querying ${offset+100} transactions...`)
+            return fetchAllData(address, offset + 100);
+          } else {
+            return allData;
+          }
+        } catch (error) {
+          throw error;
+        }
+      };
+      
+      fetchAllData(address, offset)
+        .then(data => {
+          console.log(`${new Date().toISOString()} Successfully fetched all kujira transactions`);
+          return filterKujiraSendRecieveAssets({ txs: data, address: address });
+        })
+        .then(processedData => {
+          console.log(`${new Date().toISOString()} Successfully processed Kujira data`);
+          const timestampedData = {
+            ...processedData,
+            last_updated: Date.now()
+          };
+          firebaseCryptoKujiraTransactions.child(`${address}/assets`).set(timestampedData);
+          calculateKujiraAssets(processedData, address).then(data => res.json(data))
+        })
+        .catch(error => {
+          console.error(`${new Date().toISOString()} Error: ${error}`);
+          res.status(500).send('Internal Server Error');
+        });
+    }
+  });
 });
 
 router.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-async function updateRedisData(data, cacheKey, cacheTime) {
-  await redisClient.setEx(cacheKey, cacheTime, JSON.stringify(data));
-  console.log(`Cached ${cacheKey} for 5 minutes`);
+async function calculateGhostPnL(allGhostTxns){
+  let ghostWithdraws = [];
+  let ghostDeposits = [];
+  if(allGhostTxns.length > 0){
+    allGhostTxns.forEach(txn => {
+      if(txn.type === 'wasm-ghost/deposit'){
+        ghostDeposits.push(txn)
+      } else if(txn.type === 'wasm-ghost/withdraw'){
+        ghostWithdraws.push(txn)
+      }
+    });
+  }
+  console.log(`ghostDeposits: ${ghostDeposits}`)
+  console.log(`ghostWithdraws: ${ghostWithdraws}`)
+
+  // get net deposited
+  let depositAssets = {};
+  let withdrawAssets = {};
+  let calculatedGhostAssetValues = {};
+
+  ghostDeposits.forEach(deposit => {
+    const denom = deposit.denom;
+    if (!depositAssets[denom]) {
+      depositAssets[denom] = uAssetToAsset(deposit.amount);
+    }
+    depositAssets[denom] += uAssetToAsset(deposit.amount);
+  });
+
+  ghostWithdraws.forEach(withdraw => {
+    const denom = withdraw.denom;
+    if (!withdrawAssets[denom]) {
+      withdrawAssets[denom] = uAssetToAsset(withdraw.amount);
+    }
+    withdrawAssets[denom] += uAssetToAsset(withdraw.amount);
+  });
+
+  let allDenoms = new Set([...Object.keys(depositAssets), ...Object.keys(withdrawAssets)]);
+
+  allDenoms.forEach(denom => {
+    const netValue = depositAssets[denom] - (withdrawAssets[denom] || 0);
+    if(netValue > 0){
+      calculatedGhostAssetValues[denom] = netValue;
+    }
+  })
+  console.log(depositAssets)
+  console.log(withdrawAssets)
+  return calculatedGhostAssetValues;
 }
 
-function removeDuplicates(strings) {
-  return [...new Set(strings)];
+async function calculateKujiraAssets(allKujiraTransferTransactions, address){
+  let coinsSpent = [];
+  let coinsRecieved = [];
+  let coinsTransfered = [];
+  const keysToCheck = ['sender', 'spender', 'reciever', 'recipient'];
+
+  if(allKujiraTransferTransactions.length > 0){
+
+    allKujiraTransferTransactions.forEach(txn => {
+      if(txn.type === 'coin_spent'){
+        console.log("keysToCheck.includes(txn.key): " + keysToCheck.includes(txn.key))
+        console.log("txn.value === address: " + txn.value === address)
+        if(keysToCheck.includes(txn.key) && txn.value === address){
+          coinsSpent.push(txn)
+        }
+      } else if(txn.type === 'coin_received'){
+        coinsRecieved.push(txn)
+      }
+    });
+  }
+  // console.log(coinsSpent)
+  // console.log(coinsRecieved)
+  // console.log(coinsTransfered)
+
+
+  // // get net deposited
+  // let depositAssets = {};
+  // let withdrawAssets = {};
+  // let calculatedGhostAssetValues = {};
+
+  // ghostDeposits.forEach(deposit => {
+  //   const denom = deposit.denom;
+  //   if (!depositAssets[denom]) {
+  //     depositAssets[denom] = uAssetToAsset(deposit.amount);
+  //   }
+  //   depositAssets[denom] += uAssetToAsset(deposit.amount);
+  // });
+
+  // ghostWithdraws.forEach(withdraw => {
+  //   const denom = withdraw.denom;
+  //   if (!withdrawAssets[denom]) {
+  //     withdrawAssets[denom] = uAssetToAsset(withdraw.amount);
+  //   }
+  //   withdrawAssets[denom] += uAssetToAsset(withdraw.amount);
+  // });
+
+  // let allDenoms = new Set([...Object.keys(depositAssets), ...Object.keys(withdrawAssets)]);
+
+  // allDenoms.forEach(denom => {
+  //   const netValue = depositAssets[denom] - (withdrawAssets[denom] || 0);
+  //   if(netValue > 0){
+  //     calculatedGhostAssetValues[denom] = netValue;
+  //   }
+  // })
+  // console.log(depositAssets)
+  // console.log(withdrawAssets)
+  // return calculatedGhostAssetValues;
+}
+
+async function getKujiraAddressData(address, offset){
+  return axios.get('https://api.kujira.app/api/txs', {
+    params: {
+      q: address,
+      limit: 100,
+      offset: offset,
+      order_by: 'rowid',
+      order_dir: 'desc'
+    }
+  });
+}
+
+function uAssetToAsset(uAsset){
+  return parseInt(uAsset)/1000000;
+}
+
+async function filterKujiraGhost(kujiraData){
+  const kujiTxs = kujiraData.txs;
+  const transactions = kujiTxs.map(tx => {
+    const events = tx.events.filter(event => 
+      event.type === 'wasm-ghost/deposit' || 
+      event.type === 'wasm-ghost/withdraw' || 
+      event.type === 'tx'
+    );
+    return events.flatMap(event => 
+      event.attributes.filter(attr => 
+        attr.key === 'denom' || 
+        attr.key === 'amount' || 
+        attr.key === 'height'
+      ).map(attr => ({
+        ...attr,
+        type: event.type
+      }))
+    );
+  });
+  const filteredAttributes = transactions.filter(attributes => attributes.length > 1);
+  
+  // Transform the filtered attributes into a more structured format
+  const structuredData = filteredAttributes.map(attributes => {
+    const data = {};
+    attributes.forEach(attr => {
+      data[attr.key] = attr.value;
+      if (attr.type) {
+        data['type'] = attr.type;
+      }
+    });
+    return data;
+  });
+  return structuredData;
+}
+
+async function filterKujiraSendRecieveAssets(kujiraData, address){
+  const kujiTxs = kujiraData.txs;
+  const transactions = kujiTxs.map(tx => {
+    const events = tx.events.filter(event => 
+      event.type === 'coin_received' || 
+      event.type === 'coin_spent' || 
+      event.type === 'transfer'
+    );
+    return events.flatMap(event => 
+      event.attributes.filter(attr => 
+        attr.key === 'sender' || 
+        attr.key === 'spender' ||
+        attr.key === 'reciever' ||
+        attr.key === 'recipient' ||
+        attr.key === 'amount'
+      ).map(attr => ({
+        ...attr,
+        type: event.type
+      }))
+    );
+  });
+  console.log(transactions);
+  const filteredAttributes = transactions.filter(attributes => attributes.length > 1);
+  
+  // Transform the filtered attributes into a more structured format
+  const structuredData = filteredAttributes.map(attributes => {
+    const data = {};
+    attributes.forEach(attr => {
+      data[attr.key] = attr.value;
+      if (attr.type) {
+        data['type'] = attr.type;
+      }
+    });
+    return data;
+  });
+  return structuredData;
 }
 
 module.exports = router;
