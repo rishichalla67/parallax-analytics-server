@@ -8,6 +8,13 @@ var admin = require("firebase-admin");
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
 let REFRESH_TIMER_MINUTES = 30;
 let CHART_DATA_REFRESH_TIMER_MINUTES = 60;
+const WBTC = "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC"; 
+const tokenMap = {
+  "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC": 'WBTC',
+  "factory/kujira1qk00h5atutpsv900x202pxx42npjr9thg58dnqpa72f2p7m2luase444a7/uusk": "USK",
+  "ukuji": "KUJI"
+  // Add more token mappings as needed
+};
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -62,11 +69,11 @@ const firebaseCryptoSymbolChartDataRef = db.ref('crypto/symbolsChartData');
 const firebaseCryptoKujiraTransactions = db.ref('crypto/kujiraTransactions');
 
 const router = express.Router();
-const redisClient = redis.createClient({
-  // url: `${process.env.REDIS_URL}` 
-  url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
-});
-redisClient.connect();
+// const redisClient = redis.createClient({
+//   // url: `${process.env.REDIS_URL}` 
+//   url: "redis://:8R3rayhaJe66wIYQRKaY7UnsnlWBDvi4@redis-15972.c274.us-east-1-3.ec2.cloud.redislabs.com:15972"
+// });
+// redisClient.connect();
 
 router.get('/kujiraGhostBalance', async (req, res) => {
   const { address, forceRefresh } = req.query;
@@ -80,12 +87,24 @@ router.get('/kujiraGhostBalance', async (req, res) => {
   
   firebaseCryptoKujiraTransactions.child(`${address}/ghost`).once('value', snapshot => {
     const cachedData = snapshot.val();
-    const oneHour = (60 * 60 * 1000);
-    if (forceRefresh === "false" && snapshot.exists() && (Date.now() - cachedData.last_updated) < oneHour) {
-        console.log(`${new Date().toISOString()} Cached kujira transactions found for address: ${address}`);
-        calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data))
-         
+    if (snapshot.exists()) {
+        getKujiraAddressData(address, 0)
+            .then(response => {
+                const latestHeight = response.data.txs[0]?.height || 0;
+                if (latestHeight > cachedData.last_updated_height) {
+                    console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);
+                    // Continue with data fetching and processing...
+                } else {
+                    console.log(`${new Date().toISOString()} No new kujira transactions found for address: ${address}`);
+                    calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data));
+                }
+            })
+            .catch(error => {
+                console.error(`${new Date().toISOString()} Error fetching latest kujira transactions: ${error}`);
+                res.status(500).send('Internal Server Error');
+            });
     } else {
+        // No cached data, proceed with fetching and processing...
       const fetchAllData = async (address, offset) => {
         try {
           const response = await getKujiraAddressData(address, offset);
@@ -194,8 +213,8 @@ async function calculateGhostPnL(allGhostTxns){
       }
     });
   }
-  console.log(`ghostDeposits: ${ghostDeposits}`)
-  console.log(`ghostWithdraws: ${ghostWithdraws}`)
+  console.log(`ghostDeposits: ${ghostDeposits.length}`)
+  console.log(`ghostWithdraws: ${ghostWithdraws.length}`)
 
   // get net deposited
   let depositAssets = {};
@@ -205,17 +224,17 @@ async function calculateGhostPnL(allGhostTxns){
   ghostDeposits.forEach(deposit => {
     const denom = deposit.denom;
     if (!depositAssets[denom]) {
-      depositAssets[denom] = uAssetToAsset(deposit.amount);
+      depositAssets[denom] = uAssetToAsset(denom, deposit.amount);
     }
-    depositAssets[denom] += uAssetToAsset(deposit.amount);
+    depositAssets[denom] = depositAssets[denom] + uAssetToAsset(denom, deposit.amount);
   });
 
   ghostWithdraws.forEach(withdraw => {
     const denom = withdraw.denom;
     if (!withdrawAssets[denom]) {
-      withdrawAssets[denom] = uAssetToAsset(withdraw.amount);
+      withdrawAssets[denom] = uAssetToAsset(denom,withdraw.amount);
     }
-    withdrawAssets[denom] += uAssetToAsset(withdraw.amount);
+    withdrawAssets[denom] =  withdrawAssets[denom] + uAssetToAsset(denom,withdraw.amount);
   });
 
   let allDenoms = new Set([...Object.keys(depositAssets), ...Object.keys(withdrawAssets)]);
@@ -223,7 +242,7 @@ async function calculateGhostPnL(allGhostTxns){
   allDenoms.forEach(denom => {
     const netValue = depositAssets[denom] - (withdrawAssets[denom] || 0);
     if(netValue > 0){
-      calculatedGhostAssetValues[denom] = netValue;
+      calculatedGhostAssetValues[filterToken(denom)] = netValue;
     }
   })
   console.log(depositAssets)
@@ -302,8 +321,17 @@ async function getKujiraAddressData(address, offset){
   });
 }
 
-function uAssetToAsset(uAsset){
-  return parseInt(uAsset)/1000000;
+
+function filterToken(denom) {
+  return tokenMap[denom] || denom;
+}
+
+
+function uAssetToAsset(symbol, amount){
+  if (symbol === WBTC) {
+    return amount/100000000;
+  }
+  return amount/1000000;
 }
 
 async function filterKujiraGhost(kujiraData){
