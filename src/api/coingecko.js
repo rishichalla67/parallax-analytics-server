@@ -8,11 +8,14 @@ var admin = require("firebase-admin");
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
 let REFRESH_TIMER_MINUTES = 30;
 let CHART_DATA_REFRESH_TIMER_MINUTES = 60;
+const EIGHT_DECIMAL_PLACES = 100000000;
+const SIX_DECIMAL_PLACES = 1000000;
 const WBTC = "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC"; 
 const tokenMap = {
   "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC": 'WBTC',
   "factory/kujira1qk00h5atutpsv900x202pxx42npjr9thg58dnqpa72f2p7m2luase444a7/uusk": "USK",
-  "ukuji": "KUJI"
+  "ukuji": "KUJI",
+  "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": "USDC"
   // Add more token mappings as needed
 };
 
@@ -90,17 +93,28 @@ router.get('/kujiraGhostBalance', async (req, res) => {
     if (snapshot.exists()) {
         getKujiraAddressData(address, 0)
             .then(response => {
-                const latestHeight = response.data.txs[0]?.height || 0;
-                if (latestHeight > cachedData.last_updated_height) {
-                    console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);
-                    // Continue with data fetching and processing...
-                } else {
-                    console.log(`${new Date().toISOString()} No new kujira transactions found for address: ${address}`);
-                    calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data));
-                }
+                filterKujiraGhost(response.data)
+                    .then(ghostFilteredData => {
+                        const latestTransaction = ghostFilteredData[0];
+                        const latestHeight = latestTransaction ? parseInt(latestTransaction.height) : 0;
+                        console.log(`Latest transaction height: ${latestHeight}`);
+                        if (latestHeight > cachedData[0].height) {
+                            console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);                            
+                            const updatedTransactions = appendNewTransactions(ghostFilteredData, cachedData, latestHeight);
+                            firebaseCryptoKujiraTransactions.child(`${address}/ghost`).set(updatedTransactions);
+                            calculateGhostPnL(Object.values(updatedTransactions)).then(data => res.json(data));
+                        } else {
+                            console.log(`${new Date().toISOString()} No new kujira transactions found for address: ${address}`);
+                            calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data));
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`${new Date().toISOString()} Error processing kujira transactions: ${error}`);
+                        res.status(500).send('Internal Server Error');
+                    });
             })
             .catch(error => {
-                console.error(`${new Date().toISOString()} Error fetching latest kujira transactions: ${error}`);
+                console.error(`${new Date().toISOString()} Error fetching kujira transactions: ${error}`);
                 res.status(500).send('Internal Server Error');
             });
     } else {
@@ -141,6 +155,16 @@ router.get('/kujiraGhostBalance', async (req, res) => {
     }
   });
 });
+
+
+function appendNewTransactions(newData, cachedData, latestBlockHeight) {
+  const cachedDataArray = Object.values(cachedData);
+  const newTransactions = newData.filter(transaction => transaction.height > latestBlockHeight);
+  return cachedDataArray.concat(newTransactions);
+}
+
+
+
 
 router.get('/kujiraWalletAssets', async (req, res) => {
   const { address, forceRefresh } = req.query;
@@ -213,8 +237,8 @@ async function calculateGhostPnL(allGhostTxns){
       }
     });
   }
-  console.log(`ghostDeposits: ${ghostDeposits.length}`)
-  console.log(`ghostWithdraws: ${ghostWithdraws.length}`)
+  // console.log(ghostDeposits)
+  // console.log(ghostWithdraws)
 
   // get net deposited
   let depositAssets = {};
@@ -226,7 +250,9 @@ async function calculateGhostPnL(allGhostTxns){
     if (!depositAssets[denom]) {
       depositAssets[denom] = uAssetToAsset(denom, deposit.amount);
     }
-    depositAssets[denom] = depositAssets[denom] + uAssetToAsset(denom, deposit.amount);
+    else{
+      depositAssets[denom] += uAssetToAsset(denom, deposit.amount);
+    }
   });
 
   ghostWithdraws.forEach(withdraw => {
@@ -329,9 +355,9 @@ function filterToken(denom) {
 
 function uAssetToAsset(symbol, amount){
   if (symbol === WBTC) {
-    return amount/100000000;
+    return parseFloat(amount)/EIGHT_DECIMAL_PLACES;
   }
-  return amount/1000000;
+  return amount/SIX_DECIMAL_PLACES;
 }
 
 async function filterKujiraGhost(kujiraData){
