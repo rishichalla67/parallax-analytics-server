@@ -239,6 +239,16 @@ async function calculateGhostPnL(allGhostTxns){
   }
   // console.log(ghostDeposits)
   // console.log(ghostWithdraws)
+  ghostDeposits.forEach(deposit => {
+    if(deposit.denom === 'ukuji'){
+      console.log(deposit);
+    }
+  });
+  ghostWithdraws.forEach(withdraw => {
+    if(withdraw.denom === 'ukuji'){
+      console.log(withdraw);
+    }
+  });
 
   // get net deposited
   let depositAssets = {};
@@ -260,7 +270,9 @@ async function calculateGhostPnL(allGhostTxns){
     if (!withdrawAssets[denom]) {
       withdrawAssets[denom] = uAssetToAsset(denom,withdraw.amount);
     }
-    withdrawAssets[denom] =  withdrawAssets[denom] + uAssetToAsset(denom,withdraw.amount);
+    else{
+      withdrawAssets[denom] += uAssetToAsset(denom,withdraw.amount);
+    }
   });
 
   let allDenoms = new Set([...Object.keys(depositAssets), ...Object.keys(withdrawAssets)]);
