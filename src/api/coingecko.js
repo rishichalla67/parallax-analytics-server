@@ -15,7 +15,9 @@ const tokenMap = {
   "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC": 'WBTC',
   "factory/kujira1qk00h5atutpsv900x202pxx42npjr9thg58dnqpa72f2p7m2luase444a7/uusk": "USK",
   "ukuji": "KUJI",
-  "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": "USDC"
+  "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": "USDC",
+  "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2": "ATOM",
+  "ibc/1B38805B1C75352B28169284F96DF56BDEBD9E8FAC005BDCC8CF0378C82AA8E7": "wETH"
   // Add more token mappings as needed
 };
 
@@ -237,19 +239,6 @@ async function calculateGhostPnL(allGhostTxns){
       }
     });
   }
-  // console.log(ghostDeposits)
-  // console.log(ghostWithdraws)
-  ghostDeposits.forEach(deposit => {
-    if(deposit.denom === 'ukuji'){
-      console.log(deposit);
-    }
-  });
-  ghostWithdraws.forEach(withdraw => {
-    if(withdraw.denom === 'ukuji'){
-      console.log(withdraw);
-    }
-  });
-
   // get net deposited
   let depositAssets = {};
   let withdrawAssets = {};
@@ -359,11 +348,9 @@ async function getKujiraAddressData(address, offset){
   });
 }
 
-
 function filterToken(denom) {
   return tokenMap[denom] || denom;
 }
-
 
 function uAssetToAsset(symbol, amount){
   if (symbol === WBTC) {
@@ -444,5 +431,180 @@ async function filterKujiraSendRecieveAssets(kujiraData, address){
   });
   return structuredData;
 }
+
+
+router.get('/findProfitablePaths', async (req, res) => {
+  const { asset } = req.query;
+
+  if (!asset) {
+    return res.status(400).send('The asset parameter is required');
+  }
+
+  try {
+    console.log(`${new Date().toISOString()} Fetching tickers for asset: ${asset}`);
+    const response = await axios.get('https://api.kujira.app/api/coingecko/tickers');
+    const tickers = response.data.tickers;
+    console.log(`${new Date().toISOString()} Tickers fetched: ${tickers.length}`);
+
+    // Create a graph of all possible trade paths
+    const graph = tickers.reduce((acc, ticker) => {
+      const { base_currency, target_currency, ask, bid, base_volume, last_price } = ticker;
+      if (!acc[base_currency]) acc[base_currency] = {};
+      acc[base_currency][target_currency] = { ask: parseFloat(ask), bid: parseFloat(bid), base_volume: parseFloat(base_volume), last_price: parseFloat(last_price) };
+      return acc;
+    }, {});
+
+    // Find all paths that start and end with the given asset
+    // Filter out subPaths with base_volume less than 1 before finding profitable paths
+    const filteredGraph = Object.fromEntries(
+      Object.entries(graph).map(([currency, subPaths]) => {
+        const filteredSubPaths = Object.fromEntries(
+          Object.entries(subPaths).filter(([_, data]) => data.base_volume*data.last_price >= 10000)
+        );
+        return filteredSubPaths && Object.keys(filteredSubPaths).length > 0
+          ? [currency, filteredSubPaths]
+          : null;
+      }).filter(entry => entry !== null)
+    );
+    const profitablePaths = findProfitablePaths(filteredGraph, asset);
+    console.log(`${new Date().toISOString()} Profitable paths found: ${profitablePaths.length}`);
+
+    // Filter out paths that do not yield a profit greater than 0.05% and have a base_volume less than 1
+    const profitablePathsOverOnePercent = profitablePaths.filter(path => path.profit > 0.05);
+    console.log(`${new Date().toISOString()} Profitable paths over 0.05 percent: ${profitablePathsOverOnePercent.length}`);
+
+    return res.json(profitablePathsOverOnePercent);
+  } catch (error) {
+    console.error(`${new Date().toISOString()} Error fetching tickers: ${error}`);
+    return res.status(500).send('Internal Server Error');
+  }
+});
+
+function getDirectionalPaths(graph){
+  const newGraph = Object.fromEntries(
+    Object.entries(graph).flatMap(([base, targets]) =>
+      Object.entries(targets).flatMap(([target, data]) => {
+        const { bid, ask, last_price } = data;
+        const baseTargetKey = `${base}_${target}`;
+        const targetBaseKey = `${target}_${base}`;
+        return [
+          [
+            baseTargetKey,
+            {
+              bid,
+              last_price,
+              diff: last_price - bid
+            }
+          ],
+          [
+            targetBaseKey,
+            {
+              ask,
+              last_price,
+              diff: last_price - ask
+            }
+          ]
+        ];
+      })
+    )
+  );
+return newGraph;
+}
+
+
+function filterPathsByStartAsset(pathsArray, startAsset) {
+  console.log(pathsArray)
+  const filteredPaths = pathsArray.filter(path => {
+    const [prefix] = path.split('_');
+    return prefix === startAsset;
+  });
+  console.log(filteredPaths)
+  return filteredPaths;
+}
+
+
+
+
+function findProfitablePaths(graph, startAsset) {
+  let profitablePaths = [];
+  const allPaths = getDirectionalPaths(graph);
+  console.log(allPaths)
+  const filteredPathKeys = filterPathsByStartAsset(Object.keys(allPaths), startAsset);
+  console.log(`Starting to find profitable paths for asset: ${startAsset}`);
+  console.log(filteredPathKeys)
+
+  const matchingPaths = filteredPathKeys.reduce((acc, key) => {
+    if (allPaths[key].diff > 0) {
+      acc[key] = allPaths[key].diff;
+    }
+    return acc;
+  }, {});
+  console.log(matchingPaths);
+  
+  // for (let currentAsset in graph) {
+  //   for (let nextAsset in graph[currentAsset]) {
+
+  //     console.log(`Trade data from ${currentAsset} to ${nextAsset}:`, graph[currentAsset][nextAsset]);
+  //   }
+  // }
+  
+  // Recursive function to traverse the graph and find all paths
+  // function traverse(currentAsset, visited, rate, path, lastPrice) {
+  //   console.log(`Traversing from asset: ${currentAsset}`);
+  //   visited.add(currentAsset);
+  //   path.push(currentAsset);
+
+    
+  //   // Base case: if the path has returned to the startAsset and is profitable
+  //   if (currentAsset === startAsset && path.length > 1 ) {
+  //     console.log(`Found profitable path: ${path.join(' -> ')} with profit: ${((rate - 1) * 100).toFixed(2)}%`);
+  //     profitablePaths.push({ path: [...path], profit: ((rate - 1) * 100).toFixed(2) });
+  //     return;
+  //   }
+
+  //   // Recursive case: visit each connected asset
+  //   for (let nextAsset in graph[currentAsset]) {
+  //     if (!visited.has(nextAsset)) {
+  //       const tradeData = graph[currentAsset][nextAsset];
+  //       let tradeRate;
+  //       if (path.length === 1) { // First trade
+  //         tradeRate = tradeData.bid - lastPrice; // Selling, so use bid price
+  //       } else {
+  //         tradeRate = lastPrice - tradeData.ask; // Buying, so use ask price
+  //       }
+  //       const nextRate = rate + tradeRate * 0.9995; // Account for 0.05% fee
+  //       const nextLastPrice = tradeData.last_price; // Update last price for next trade
+  //       console.log(`Considering trade from ${currentAsset} to ${nextAsset} with rate: ${nextRate}`);
+  //       if (tradeRate > 0) { // Only continue if this trade is profitable
+  //         traverse(nextAsset, new Set(visited), nextRate, path, nextLastPrice);
+  //       } else {
+  //         console.log(`Trade from ${currentAsset} to ${nextAsset} is not profitable, skipping`);
+  //       }
+  //     } else {
+  //       console.log(`Asset ${nextAsset} has already been visited, skipping`);
+  //     }
+  //   }
+
+  //   // Backtrack
+  //   console.log(`Backtracking from asset: ${currentAsset}`);
+  //   visited.delete(currentAsset);
+  //   path.pop();
+  // }
+
+  // Start with the last_price of the startAsset as the initial lastPrice
+  const firstKey = graph[filteredPathKeys[0]];
+  const firstAsset = firstKey[startAsset];
+  const initialLastPrice = firstAsset && firstAsset.last_price;
+  if (initialLastPrice) {
+    console.log(`Initial last price for ${startAsset}: ${initialLastPrice}`);
+    // traverse(startAsset, new Set(), 0, [], initialLastPrice);
+  } else {
+    console.log(`No initial last price found for ${startAsset}, cannot start traversal`);
+  }
+
+  console.log(`Total profitable paths found for ${startAsset}: ${profitablePaths.length}`);
+  return profitablePaths;
+}
+
 
 module.exports = router;
