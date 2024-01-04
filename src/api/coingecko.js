@@ -17,7 +17,14 @@ const tokenMap = {
   "ukuji": "KUJI",
   "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": "USDC",
   "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2": "ATOM",
-  "ibc/1B38805B1C75352B28169284F96DF56BDEBD9E8FAC005BDCC8CF0378C82AA8E7": "wETH"
+  "ibc/1B38805B1C75352B28169284F96DF56BDEBD9E8FAC005BDCC8CF0378C82AA8E7": "wETH",
+  "ibc/E5CA126979E2FFB4C70C072F8094D07ECF27773B37623AD2BF7582AD0726F0F3": "whSOL",
+  "ibc/47BD209179859CDE4A2806763D7189B6E6FE13A17880FE2B42DE1E6C1E329E23" : "OSMO",
+  "ibc/4F393C3FCA4190C0A6756CE7F6D897D5D1BE57D6CCB80D0BC87393566A7B6602": "STARS",
+  "ibc/295548A78785A1007F232DE286149A6FF512F180AF5657780FC89C009E2C348F": "axlUSDC",
+  "ibc/DA59C009A0B3B95E0549E6BF7B075C8239285989FF457A8EDDBB56F10B2A6986": "LUNA",
+  "ibc/EFF323CC632EC4F747C61BCE238A758EFDB7699C3226565F7C20DA06509D59A5": "JUNO",
+  "": ""
   // Add more token mappings as needed
 };
 
@@ -100,9 +107,11 @@ router.get('/kujiraGhostBalance', async (req, res) => {
                         const latestTransaction = ghostFilteredData[0];
                         const latestHeight = latestTransaction ? parseInt(latestTransaction.height) : 0;
                         console.log(`Latest transaction height: ${latestHeight}`);
+                        console.log(`Latest cached transaction height: ${cachedData[0].height}`);
+                        console.log(cachedData)
                         if (latestHeight > cachedData[0].height) {
                             console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);                            
-                            const updatedTransactions = appendNewTransactions(ghostFilteredData, cachedData, latestHeight);
+                            const updatedTransactions = appendNewTransactions(ghostFilteredData, cachedData, cachedData[0].height);
                             firebaseCryptoKujiraTransactions.child(`${address}/ghost`).set(updatedTransactions);
                             calculateGhostPnL(Object.values(updatedTransactions)).then(data => res.json(data));
                         } else {
@@ -162,13 +171,12 @@ router.get('/kujiraGhostBalance', async (req, res) => {
 function appendNewTransactions(newData, cachedData, latestBlockHeight) {
   const cachedDataArray = Object.values(cachedData);
   const newTransactions = newData.filter(transaction => transaction.height > latestBlockHeight);
-  return cachedDataArray.concat(newTransactions);
+  return newTransactions.concat(cachedDataArray);
 }
 
 
 
-
-router.get('/kujiraWalletAssets', async (req, res) => {
+router.get('/kujiraBorrowPositions', async (req, res) => {
   const { address, forceRefresh } = req.query;
   if (!address) {
     console.log(`${new Date().toISOString()} No kujira address provided in request`);
@@ -178,7 +186,7 @@ router.get('/kujiraWalletAssets', async (req, res) => {
   let allData = [];
   console.log(`${new Date().toISOString()} Fetching kujira transactions for address: ${address}`);
   
-  firebaseCryptoKujiraTransactions.child(`${address}/assets`).once('value', snapshot => {
+  firebaseCryptoKujiraTransactions.child(`${address}/borrow`).once('value', snapshot => {
     const cachedData = snapshot.val();
     const oneHour = (60 * 60 * 1000);
     if (forceRefresh === "false" && snapshot.exists() && (Date.now() - cachedData.last_updated) < oneHour) {
@@ -212,7 +220,7 @@ router.get('/kujiraWalletAssets', async (req, res) => {
             ...processedData,
             last_updated: Date.now()
           };
-          firebaseCryptoKujiraTransactions.child(`${address}/assets`).set(timestampedData);
+          firebaseCryptoKujiraTransactions.child(`${address}/borrow`).set(timestampedData);
           calculateKujiraAssets(processedData, address).then(data => res.json(data))
         })
         .catch(error => {
@@ -394,29 +402,56 @@ async function filterKujiraGhost(kujiraData){
   return structuredData;
 }
 
+
+
 async function filterKujiraSendRecieveAssets(kujiraData, address){
+  const uskMarketContracts = [
+    'kujira1f6jl29tsrzevdluc74kqzs7v2mrkc86sq2cxd4v4wr7y6hl8qggswnwndn', // USK Market; wBTC
+    address
+  ];
+  
   const kujiTxs = kujiraData.txs;
   const transactions = kujiTxs.map(tx => {
+    // Ensure tx.events is an array
+    if (!Array.isArray(tx.events)) {
+      console.error('Expected tx.events to be an array', tx.events);
+      return [];
+    }
+  
     const events = tx.events.filter(event => 
-      event.type === 'coin_received' || 
-      event.type === 'coin_spent' || 
-      event.type === 'transfer'
+      event.type === 'coin_received' &&
+      Array.isArray(event.attributes) && // Ensure event.attributes is an array
+      event.attributes.some(attr => attr.key === 'receiver' && uskMarketContracts.includes(attr.value))
     );
-    return events.flatMap(event => 
-      event.attributes.filter(attr => 
-        attr.key === 'sender' || 
-        attr.key === 'spender' ||
-        attr.key === 'reciever' ||
-        attr.key === 'recipient' ||
-        attr.key === 'amount'
-      ).map(attr => ({
-        ...attr,
-        type: event.type
-      }))
-    );
+  
+    return events.map(event => {
+      // Ensure event.attributes is an array
+      if (!Array.isArray(event.attributes)) {
+        console.error('Expected event.attributes to be an array', event.attributes);
+        return null;
+      }
+  
+      const attributes = event.attributes.filter(attr => attr.key === 'amount' || (attr.key === 'receiver' && uskMarketContracts.includes(attr.value)));
+      return {
+        ...event,
+        attributes
+      };
+    }).filter(event => event !== null); // Filter out any null events that may have been added due to unexpected structure
+  }).flat();
+  transactions.forEach(transaction => {
+    console.log('Transaction:', JSON.stringify(transaction, null, 2));
   });
-  console.log(transactions);
-  const filteredAttributes = transactions.filter(attributes => attributes.length > 1);
+  const filteredAttributes = transactions.filter(attributes => 
+    attributes.some(attr => 
+      attr.key === 'receiver' && uskMarketContracts.includes(attr.value)
+    )
+  );
+  const transactionCounts = uskMarketContracts.reduce((acc, contract) => {
+    acc[contract] = transactions.filter(tx => tx.attributes.some(attr => attr.key === 'receiver' && attr.value === contract)).length;
+    return acc;
+  }, {});
+  console.log('Transaction counts by contract:', transactionCounts);
+  // console.log(filteredAttributes)
   
   // Transform the filtered attributes into a more structured format
   const structuredData = filteredAttributes.map(attributes => {
