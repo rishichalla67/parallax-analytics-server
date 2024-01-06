@@ -94,7 +94,18 @@ async function updateFirebaseData(address, dataType, data) {
   await firebaseCryptoKujiraTransactions.child(`${address}/${dataType}`).set(data);
 }
 
+const fetchAllDataCache = {};
+
 async function fetchAllData(address) {
+  const cacheKey = address;
+  const currentTime = Date.now();
+  const fiveMinutes = 5 * 60 * 1000;
+  
+  if (fetchAllDataCache[cacheKey] && (currentTime - fetchAllDataCache[cacheKey].timestamp) < fiveMinutes) {
+    console.log(`Using cached data for address: ${address}`);
+    return fetchAllDataCache[cacheKey].data;
+  }
+  
   let offset = 0;
   let allData = [];
   while (true) {
@@ -107,9 +118,14 @@ async function fetchAllData(address) {
       break;
     }
   }
+  
+  fetchAllDataCache[cacheKey] = {
+    timestamp: currentTime,
+    data: allData
+  };
+  
   return allData;
 }
-
 
 function appendNewTransactions(newData, cachedData, latestBlockHeight) {
   const cachedDataArray = Object.values(cachedData);
@@ -117,60 +133,6 @@ function appendNewTransactions(newData, cachedData, latestBlockHeight) {
   return newTransactions.concat(cachedDataArray);
 }
 
-router.get('/kujiraBorrowPositions', async (req, res) => {
-  const { address, forceRefresh } = req.query;
-  if (!address) {
-    console.log(`${new Date().toISOString()} No kujira address provided in request`);
-    return res.status(400).send('No kujira address provided');
-  }
-  let offset = 0;
-  let allData = [];
-  console.log(`${new Date().toISOString()} Fetching kujira transactions for address: ${address}`);
-  
-  firebaseCryptoKujiraTransactions.child(`${address}/borrow`).once('value', snapshot => {
-    const cachedData = snapshot.val();
-    const oneHour = (60 * 60 * 1000);
-    if (forceRefresh === "false" && snapshot.exists() && (Date.now() - cachedData.last_updated) < oneHour) {
-        console.log(`${new Date().toISOString()} Cached kujira transactions found for address: ${address}`);
-        calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data))
-         
-    } else {
-      const fetchAllData = async (address, offset) => {
-        try {
-          const response = await getKujiraAddressData(address, offset);
-          if (response.data && response.data.txs.length > 0) {
-            allData = allData.concat(response.data.txs);
-            console.log(`Completed querying ${offset+100} transactions...`)
-            return fetchAllData(address, offset + 100);
-          } else {
-            return allData;
-          }
-        } catch (error) {
-          throw error;
-        }
-      };
-      
-      fetchAllData(address, offset)
-        .then(data => {
-          console.log(`${new Date().toISOString()} Successfully fetched all kujira transactions`);
-          return filterKujiraSendRecieveAssets({ txs: data, address: address });
-        })
-        .then(processedData => {
-          console.log(`${new Date().toISOString()} Successfully processed Kujira data`);
-          const timestampedData = {
-            ...processedData,
-            last_updated: Date.now()
-          };
-          firebaseCryptoKujiraTransactions.child(`${address}/borrow`).set(timestampedData);
-          calculateKujiraAssets(processedData, address).then(data => res.json(data))
-        })
-        .catch(error => {
-          console.error(`${new Date().toISOString()} Error: ${error}`);
-          res.status(500).send('Internal Server Error');
-        });
-    }
-  });
-});
 
 router.get('/health', (req, res) => {
   res.status(200).send('OK');
@@ -224,65 +186,6 @@ async function calculateGhostPnL(allGhostTxns){
   // console.log(depositAssets)
   // console.log(withdrawAssets)
   return calculatedGhostAssetValues;
-}
-
-async function calculateKujiraAssets(allKujiraTransferTransactions, address){
-  let coinsSpent = [];
-  let coinsRecieved = [];
-  let coinsTransfered = [];
-  const keysToCheck = ['sender', 'spender', 'reciever', 'recipient'];
-
-  if(allKujiraTransferTransactions.length > 0){
-
-    allKujiraTransferTransactions.forEach(txn => {
-      if(txn.type === 'coin_spent'){
-        console.log("keysToCheck.includes(txn.key): " + keysToCheck.includes(txn.key))
-        console.log("txn.value === address: " + txn.value === address)
-        if(keysToCheck.includes(txn.key) && txn.value === address){
-          coinsSpent.push(txn)
-        }
-      } else if(txn.type === 'coin_received'){
-        coinsRecieved.push(txn)
-      }
-    });
-  }
-  // console.log(coinsSpent)
-  // console.log(coinsRecieved)
-  // console.log(coinsTransfered)
-
-
-  // // get net deposited
-  // let depositAssets = {};
-  // let withdrawAssets = {};
-  // let calculatedGhostAssetValues = {};
-
-  // ghostDeposits.forEach(deposit => {
-  //   const denom = deposit.denom;
-  //   if (!depositAssets[denom]) {
-  //     depositAssets[denom] = uAssetToAsset(deposit.amount);
-  //   }
-  //   depositAssets[denom] += uAssetToAsset(deposit.amount);
-  // });
-
-  // ghostWithdraws.forEach(withdraw => {
-  //   const denom = withdraw.denom;
-  //   if (!withdrawAssets[denom]) {
-  //     withdrawAssets[denom] = uAssetToAsset(withdraw.amount);
-  //   }
-  //   withdrawAssets[denom] += uAssetToAsset(withdraw.amount);
-  // });
-
-  // let allDenoms = new Set([...Object.keys(depositAssets), ...Object.keys(withdrawAssets)]);
-
-  // allDenoms.forEach(denom => {
-  //   const netValue = depositAssets[denom] - (withdrawAssets[denom] || 0);
-  //   if(netValue > 0){
-  //     calculatedGhostAssetValues[denom] = netValue;
-  //   }
-  // })
-  // console.log(depositAssets)
-  // console.log(withdrawAssets)
-  // return calculatedGhostAssetValues;
 }
 
 async function getKujiraAddressData(address, offset){
@@ -344,72 +247,6 @@ async function filterKujiraGhost(kujiraData){
   });
   return structuredData;
 }
-
-
-
-async function filterKujiraSendRecieveAssets(kujiraData, address){
-  const uskMarketContracts = [
-    'kujira1f6jl29tsrzevdluc74kqzs7v2mrkc86sq2cxd4v4wr7y6hl8qggswnwndn', // USK Market; wBTC
-    address
-  ];
-  
-  const kujiTxs = kujiraData.txs;
-  const transactions = kujiTxs.map(tx => {
-    // Ensure tx.events is an array
-    if (!Array.isArray(tx.events)) {
-      console.error('Expected tx.events to be an array', tx.events);
-      return [];
-    }
-  
-    const events = tx.events.filter(event => 
-      event.type === 'coin_received' &&
-      Array.isArray(event.attributes) && // Ensure event.attributes is an array
-      event.attributes.some(attr => attr.key === 'receiver' && uskMarketContracts.includes(attr.value))
-    );
-  
-    return events.map(event => {
-      // Ensure event.attributes is an array
-      if (!Array.isArray(event.attributes)) {
-        console.error('Expected event.attributes to be an array', event.attributes);
-        return null;
-      }
-  
-      const attributes = event.attributes.filter(attr => attr.key === 'amount' || (attr.key === 'receiver' && uskMarketContracts.includes(attr.value)));
-      return {
-        ...event,
-        attributes
-      };
-    }).filter(event => event !== null); // Filter out any null events that may have been added due to unexpected structure
-  }).flat();
-  transactions.forEach(transaction => {
-    console.log('Transaction:', JSON.stringify(transaction, null, 2));
-  });
-  const filteredAttributes = transactions.filter(attributes => 
-    attributes.some(attr => 
-      attr.key === 'receiver' && uskMarketContracts.includes(attr.value)
-    )
-  );
-  const transactionCounts = uskMarketContracts.reduce((acc, contract) => {
-    acc[contract] = transactions.filter(tx => tx.attributes.some(attr => attr.key === 'receiver' && attr.value === contract)).length;
-    return acc;
-  }, {});
-  console.log('Transaction counts by contract:', transactionCounts);
-  // console.log(filteredAttributes)
-  
-  // Transform the filtered attributes into a more structured format
-  const structuredData = filteredAttributes.map(attributes => {
-    const data = {};
-    attributes.forEach(attr => {
-      data[attr.key] = attr.value;
-      if (attr.type) {
-        data['type'] = attr.type;
-      }
-    });
-    return data;
-  });
-  return structuredData;
-}
-
 
 router.get('/findProfitablePaths', async (req, res) => {
   const { asset } = req.query;
