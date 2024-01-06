@@ -2,29 +2,27 @@ const express = require('express');
 const axios = require('axios');
 const redis = require('redis');
 const fs = require('fs');
-// const SymbolSchema = require('../../resources/schemas/SymbolSchema');
 const { getDatabase } = require('firebase-admin/database');
 var admin = require("firebase-admin");
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
-let REFRESH_TIMER_MINUTES = 30;
-let CHART_DATA_REFRESH_TIMER_MINUTES = 60;
-const EIGHT_DECIMAL_PLACES = 100000000;
-const SIX_DECIMAL_PLACES = 1000000;
+const EIGHTEEN = 1000000000000000000;
+const EIGHT = 100000000;
+const SIX = 1000000;
 const WBTC = "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC"; 
 const tokenMap = {
-  "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC": 'WBTC',
-  "factory/kujira1qk00h5atutpsv900x202pxx42npjr9thg58dnqpa72f2p7m2luase444a7/uusk": "USK",
-  "ukuji": "KUJI",
-  "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": "USDC",
-  "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2": "ATOM",
-  "ibc/1B38805B1C75352B28169284F96DF56BDEBD9E8FAC005BDCC8CF0378C82AA8E7": "wETH",
-  "ibc/E5CA126979E2FFB4C70C072F8094D07ECF27773B37623AD2BF7582AD0726F0F3": "whSOL",
-  "ibc/47BD209179859CDE4A2806763D7189B6E6FE13A17880FE2B42DE1E6C1E329E23" : "OSMO",
-  "ibc/4F393C3FCA4190C0A6756CE7F6D897D5D1BE57D6CCB80D0BC87393566A7B6602": "STARS",
-  "ibc/295548A78785A1007F232DE286149A6FF512F180AF5657780FC89C009E2C348F": "axlUSDC",
-  "ibc/DA59C009A0B3B95E0549E6BF7B075C8239285989FF457A8EDDBB56F10B2A6986": "LUNA",
-  "ibc/EFF323CC632EC4F747C61BCE238A758EFDB7699C3226565F7C20DA06509D59A5": "JUNO",
-  "": ""
+  "ibc/301DAF9CB0A9E247CD478533EF0E21F48FF8118C4A51F77C8BC3EB70E5566DBC": { symbol: 'WBTC', decimals: EIGHT },
+  "factory/kujira1qk00h5atutpsv900x202pxx42npjr9thg58dnqpa72f2p7m2luase444a7/uusk": { symbol: "USK", decimals: SIX },
+  "ukuji": { symbol: "KUJI", decimals: SIX },
+  "ibc/FE98AAD68F02F03565E9FA39A5E627946699B2B07115889ED812D8BA639576A9": { symbol: "USDC", decimals: SIX },
+  "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2": { symbol: "ATOM", decimals: SIX },
+  "ibc/1B38805B1C75352B28169284F96DF56BDEBD9E8FAC005BDCC8CF0378C82AA8E7": { symbol: "wETH", decimals: SIX },
+  "ibc/E5CA126979E2FFB4C70C072F8094D07ECF27773B37623AD2BF7582AD0726F0F3": { symbol: "whSOL", decimals: SIX },
+  "ibc/47BD209179859CDE4A2806763D7189B6E6FE13A17880FE2B42DE1E6C1E329E23" : { symbol: "OSMO", decimals: SIX },
+  "ibc/4F393C3FCA4190C0A6756CE7F6D897D5D1BE57D6CCB80D0BC87393566A7B6602": { symbol: "STARS", decimals: SIX },
+  "ibc/295548A78785A1007F232DE286149A6FF512F180AF5657780FC89C009E2C348F": { symbol: "axlUSDC", decimals: SIX },
+  "ibc/DA59C009A0B3B95E0549E6BF7B075C8239285989FF457A8EDDBB56F10B2A6986": { symbol: "LUNA", decimals: SIX },
+  "ibc/EFF323CC632EC4F747C61BCE238A758EFDB7699C3226565F7C20DA06509D59A5": { symbol: "JUNO", decimals: SIX },
+  "ibc/5A3DCF59BC9EC5C0BB7AA0CA0279FC2BB126640CB8B8F704F7BC2DC42495041B": { symbol: "INJ", decimals: EIGHTEEN }
   // Add more token mappings as needed
 };
 
@@ -32,52 +30,8 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://parallax-analytics-server-default-rtdb.firebaseio.com"
 });
-// LOG
-const logIdentifier = `logs/log_${new Date().toISOString().split('T')[0]}.txt`;
-
-// Variable to track the number of API calls
-let apiCallCount = 0;
-
-class SymbolSchema {
-  constructor(symbolData) {
-      this.id = symbolData.id; // "bitcoin"
-      this.symbol = symbolData.symbol; // "btc"
-      this.name = symbolData.name; // "Bitcoin"
-      this.image = symbolData.image; // "https://assets.coingecko.com/coins/images/1/large/bitcoin.png?1696501400"
-      this.current_price = symbolData.current_price; // 43630
-      this.market_cap = symbolData.market_cap; // 854012244623
-      this.market_cap_rank = symbolData.market_cap_rank; // 1
-      this.fully_diluted_valuation = symbolData.fully_diluted_valuation; // 916139924604
-      this.total_volume = symbolData.total_volume; // 28415939279
-      this.high_24h = symbolData.high_24h; // 44201
-      this.low_24h = symbolData.low_24h; // 42238
-      this.price_change_24h = symbolData.price_change_24h; // 1326.15
-      this.price_change_percentage_24h = symbolData.price_change_percentage_24h; // 3.1348
-      this.market_cap_change_24h = symbolData.market_cap_change_24h; // 25936223830
-      this.market_cap_change_percentage_24h = symbolData.market_cap_change_percentage_24h; // 3.13211
-      this.circulating_supply = symbolData.circulating_supply;
-      this.total_supply = symbolData.total_supply;
-      this.max_supply = symbolData.max_supply;
-      this.price_change_percentage_14d_in_currency = symbolData.price_change_percentage_14d_in_currency;
-      this.price_change_percentage_1h_in_currency = symbolData.price_change_percentage_1h_in_currency;
-      this.price_change_percentage_1y_in_currency = symbolData.price_change_percentage_1y_in_currency;
-      this.price_change_percentage_200d_in_currency = symbolData.price_change_percentage_200d_in_currency;
-      this.price_change_percentage_24h_in_currency = symbolData.price_change_percentage_24h_in_currency;
-      this.price_change_percentage_30d_in_currency = symbolData.price_change_percentage_30d_in_currency;
-      this.price_change_percentage_7d_in_currency = symbolData.price_change_percentage_7d_in_currency;
-  }
-}
-
-class PriceDataSchema{
-  constructor(symbolData){
-    this.usd = symbolData.current_price,
-    this.last_updated_at = new Date(symbolData.last_updated).getTime() / 1000 
-  }
-}
 
 const db = getDatabase();
-const firebaseCryptoSymbolsRef = db.ref('crypto/symbols');
-const firebaseCryptoSymbolChartDataRef = db.ref('crypto/symbolsChartData');
 const firebaseCryptoKujiraTransactions = db.ref('crypto/kujiraTransactions');
 
 const router = express.Router();
@@ -88,84 +42,73 @@ const router = express.Router();
 // redisClient.connect();
 
 router.get('/kujiraGhostBalance', async (req, res) => {
-  const { address, forceRefresh } = req.query;
+  const { address } = req.query;
   if (!address) {
     console.log(`${new Date().toISOString()} No kujira address provided in request`);
     return res.status(400).send('No kujira address provided');
   }
-  let offset = 0;
-  let allData = [];
   console.log(`${new Date().toISOString()} Fetching kujira transactions for address: ${address}`);
   
-  firebaseCryptoKujiraTransactions.child(`${address}/ghost`).once('value', snapshot => {
+  firebaseCryptoKujiraTransactions.child(`${address}/ghost`).once('value', async snapshot => {
     const cachedData = snapshot.val();
-    if (snapshot.exists()) {
-        getKujiraAddressData(address, 0)
-            .then(response => {
-                filterKujiraGhost(response.data)
-                    .then(ghostFilteredData => {
-                        const latestTransaction = ghostFilteredData[0];
-                        const latestHeight = latestTransaction ? parseInt(latestTransaction.height) : 0;
-                        console.log(`Latest transaction height: ${latestHeight}`);
-                        console.log(`Latest cached transaction height: ${cachedData[0].height}`);
-                        console.log(cachedData)
-                        if (latestHeight > cachedData[0].height) {
-                            console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);                            
-                            const updatedTransactions = appendNewTransactions(ghostFilteredData, cachedData, cachedData[0].height);
-                            firebaseCryptoKujiraTransactions.child(`${address}/ghost`).set(updatedTransactions);
-                            calculateGhostPnL(Object.values(updatedTransactions)).then(data => res.json(data));
-                        } else {
-                            console.log(`${new Date().toISOString()} No new kujira transactions found for address: ${address}`);
-                            calculateGhostPnL(Object.values(cachedData)).then(data => res.json(data));
-                        }
-                    })
-                    .catch(error => {
-                        console.error(`${new Date().toISOString()} Error processing kujira transactions: ${error}`);
-                        res.status(500).send('Internal Server Error');
-                    });
-            })
-            .catch(error => {
-                console.error(`${new Date().toISOString()} Error fetching kujira transactions: ${error}`);
-                res.status(500).send('Internal Server Error');
-            });
-    } else {
-        // No cached data, proceed with fetching and processing...
-      const fetchAllData = async (address, offset) => {
-        try {
-          const response = await getKujiraAddressData(address, offset);
-          if (response.data && response.data.txs.length > 0) {
-            allData = allData.concat(response.data.txs);
-            console.log(`Completed querying ${offset+100} transactions...`)
-            return fetchAllData(address, offset + 100);
-          } else {
-            return allData;
-          }
-        } catch (error) {
-          throw error;
-        }
-      };
-      
-      fetchAllData(address, offset)
-        .then(data => {
-          console.log(`${new Date().toISOString()} Successfully fetched all kujira transactions`);
-          return filterKujiraGhost({ txs: data });
-        })
-        .then(processedData => {
-          console.log(`${new Date().toISOString()} Successfully processed Kujira data`);
-          const timestampedData = {
-            ...processedData,
-            last_updated: Date.now()
-          };
-          firebaseCryptoKujiraTransactions.child(`${address}/ghost`).set(timestampedData);
-          calculateGhostPnL(processedData).then(data => res.json(data))
-        })
-        .catch(error => {
-          console.error(`${new Date().toISOString()} Error: ${error}`);
-          res.status(500).send('Internal Server Error');
-        });
+    try {
+      const latestData = await fetchLatestData(address);
+      const latestTransaction = latestData[0];
+      const latestHeight = latestTransaction ? parseInt(latestTransaction.height) : 0;
+      console.log(`Latest transaction height: ${latestHeight}`);
+      if (snapshot.exists() && latestHeight > cachedData[0].height) {
+        console.log(`${new Date().toISOString()} New kujira transactions found for address: ${address}`);
+        const updatedTransactions = appendNewTransactions(latestData, cachedData, cachedData[0].height);
+        await updateFirebaseData(address, 'ghost', updatedTransactions);
+        const data = await calculateGhostPnL(Object.values(updatedTransactions));
+        res.json(data);
+      } else if (snapshot.exists()) {
+        console.log(`${new Date().toISOString()} No new kujira transactions found for address: ${address}`);
+        const data = await calculateGhostPnL(Object.values(cachedData));
+        res.json(data);
+      } else {
+        console.log(`${new Date().toISOString()} No cached data, fetching new transactions...`);
+        const newData = await fetchAllData(address);
+        const processedData = await filterKujiraGhost({ txs: newData });
+        const timestampedData = {
+          ...processedData,
+          last_updated: Date.now()
+        };
+        await updateFirebaseData(address, 'ghost', timestampedData);
+        const data = await calculateGhostPnL(processedData);
+        res.json(data);
+      }
+    } catch (error) {
+      console.error(`${new Date().toISOString()} Error: ${error}`);
+      res.status(500).send('Internal Server Error');
     }
   });
 });
+
+async function fetchLatestData(address) {
+  const response = await getKujiraAddressData(address, 0);
+  return filterKujiraGhost(response.data);
+}
+
+async function updateFirebaseData(address, dataType, data) {
+  await firebaseCryptoKujiraTransactions.child(`${address}/${dataType}`).set(data);
+}
+
+async function fetchAllData(address) {
+  let offset = 0;
+  let allData = [];
+  while (true) {
+    const response = await getKujiraAddressData(address, offset);
+    if (response.data && response.data.txs.length > 0) {
+      allData = allData.concat(response.data.txs);
+      console.log(`Completed querying ${offset + 100} transactions...`);
+      offset += 100;
+    } else {
+      break;
+    }
+  }
+  return allData;
+}
 
 
 function appendNewTransactions(newData, cachedData, latestBlockHeight) {
@@ -173,8 +116,6 @@ function appendNewTransactions(newData, cachedData, latestBlockHeight) {
   const newTransactions = newData.filter(transaction => transaction.height > latestBlockHeight);
   return newTransactions.concat(cachedDataArray);
 }
-
-
 
 router.get('/kujiraBorrowPositions', async (req, res) => {
   const { address, forceRefresh } = req.query;
@@ -280,8 +221,8 @@ async function calculateGhostPnL(allGhostTxns){
       calculatedGhostAssetValues[filterToken(denom)] = netValue;
     }
   })
-  console.log(depositAssets)
-  console.log(withdrawAssets)
+  // console.log(depositAssets)
+  // console.log(withdrawAssets)
   return calculatedGhostAssetValues;
 }
 
@@ -357,14 +298,16 @@ async function getKujiraAddressData(address, offset){
 }
 
 function filterToken(denom) {
-  return tokenMap[denom] || denom;
+  const tokenInfo = tokenMap[denom];
+  return tokenInfo ? tokenInfo.symbol : denom;
 }
 
-function uAssetToAsset(symbol, amount){
-  if (symbol === WBTC) {
-    return parseFloat(amount)/EIGHT_DECIMAL_PLACES;
+function uAssetToAsset(denom, amount){
+  const tokenInfo = tokenMap[denom];
+  if (tokenInfo && tokenInfo.decimals) {
+    return parseFloat(amount) / tokenInfo.decimals;
   }
-  return amount/SIX_DECIMAL_PLACES;
+  return parseFloat(amount); // Fallback if denom is not found in tokenMap
 }
 
 async function filterKujiraGhost(kujiraData){
