@@ -15,7 +15,7 @@ const cache = {
     coinGeckoPrices: null,
     ophirStakedSupplyRaw: null
 };
-let treasuryBalances, treasuryDelegations, treasuryUnbondings, treasuryRedelegations, totalTreasuryAssets;
+let treasuryBalances, treasuryDelegations, treasuryUnbondings, treasuryRedelegations, totalTreasuryAssets, prices;
 const CACHE_IN_MINUTES = 1 * 60 * 1000; // 5 minutes in milliseconds
 
 const tokenMappings = {
@@ -63,9 +63,8 @@ const formatNumber = (number, decimal) => {
 async function fetchStatData() {
     cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
     cache.ophirCirculatingSupply = await axios.get('https://therealsnack.com/ophircirculatingsupply');
-    cache.coinGeckoPrices = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
-
+    cache.coinGeckoPrices = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
     cache.lastFetch = Date.now();
 
     return cache;
@@ -179,29 +178,42 @@ function adjustDecimals(data) {
     return adjustedData;
 } 
 
-async function caclulateAndAddTotalTreasuryValue(balances){
+async function caclulateAndAddTotalTreasuryValue(balances) {
     let totalValue = 0;
-    let statData = cache.coinGeckoPrices;
-    if(!statData){
+    let totalValueWithoutOphir = 0;
+    let statData;
+    if (!cache.coinGeckoPrices) {
         statData = await fetchStatData();
     }
     const whalePrice = statData.coinGeckoPrices.data['white-whale']?.usd;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData.whiteWhalePoolRawData.data);
-    const prices = {
+
+    prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData.coinGeckoPrices.data['bitcoin']?.usd,
-        ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,     //update when there is a ampWHALEt pool
-        luna: statData.coinGeckoPrices.data["terra-luna-2"]?.usd
+        ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
+        luna: statData.coinGeckoPrices.data["terra-luna-2"]?.usd,
+        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice
     }
+
     for (let key in balances) {
         let balance = balances[key].balance;
         let price = prices[key] || 0; // Assuming 0 if price is not available
         totalValue += balance * price;
+
+        // Exclude Ophir asset for the second total
+        if (key !== 'ophir') {
+            totalValueWithoutOphir += balance * price;
+        }
     }
-    return formatNumber(totalValue,2);
+
+    return {
+        "totalTreasuryValue": formatNumber(totalValue, 2),
+        "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2)
+    };
 }
 
 function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, allianceStakingRewardsData) {
@@ -242,10 +254,11 @@ router.get('/treasury', async (req, res) => {
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
     parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data);
-    let totalTreasuryValue = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
+    let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
     res.json({
         ...adjustDecimals(totalTreasuryAssets),
-        totalTreasuryValue: totalTreasuryValue
+        totalTreasuryValue: treasuryValues.totalTreasuryValue,
+        treasuryValueWithoutOphir: treasuryValues.treasuryValueWithoutOphir
     });
 })
 
