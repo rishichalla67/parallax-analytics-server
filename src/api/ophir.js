@@ -15,6 +15,10 @@ const cache = {
     coinGeckoPrices: null,
     ophirStakedSupplyRaw: null
 };
+let treasuryCache = {
+    lastFetch: 0, // Timestamp of the last fetch
+    treasuryValues: null // Cached data
+};
 let treasuryBalances, treasuryDelegations, treasuryUnbondings, treasuryRedelegations, totalTreasuryAssets, prices;
 const CACHE_IN_MINUTES = 1 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -250,17 +254,34 @@ router.get('/stats', async (req, res) => {
 });
 
 router.get('/treasury', async (req, res) => {
+    const now = Date.now();
+    const oneMinute = 60000; // 60000 milliseconds in a minute
+
+    // Check if cache is valid
+    if (treasuryCache.lastFetch > now - oneMinute && treasuryCache.data) {
+        return res.json(treasuryCache.data); // Return cached data if it's less than 1 minute old
+    }
+
+    // Fetch new data
     const ophirTreasuryMigalooAssets = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo10gj7p9tz9ncjk7fm7tmlax7q6pyljfrawjxjfs09a7e7g933sj0q7yeadc');
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
+    
     parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
-    res.json({
-        ...adjustDecimals(totalTreasuryAssets),
-        totalTreasuryValue: treasuryValues.totalTreasuryValue,
-        treasuryValueWithoutOphir: treasuryValues.treasuryValueWithoutOphir
-    });
-})
+
+    // Cache the new data with the current timestamp
+    treasuryCache = {
+        lastFetch: now,
+        data: {
+            ...adjustDecimals(totalTreasuryAssets),
+            totalTreasuryValue: treasuryValues.totalTreasuryValue,
+            treasuryValueWithoutOphir: treasuryValues.treasuryValueWithoutOphir
+        }
+    };
+
+    res.json(treasuryCache.data);
+});
 
 // router.get('/prices', async (req, res)) => {
 
