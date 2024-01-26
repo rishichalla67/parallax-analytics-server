@@ -146,7 +146,7 @@ function addAllianceAssetsAndRewardsToTreasury(alliance, treasury) {
     for (let key in alliance) {
         combined[key] = { 
             ...alliance[key], 
-            location: 'allianceStake' 
+            location: 'Alliance' 
         };
     }
 
@@ -158,7 +158,7 @@ function addAllianceAssetsAndRewardsToTreasury(alliance, treasury) {
             combined[key] = {
                 balance: treasury[key],
                 rewards: '0',
-                location: 'treasury'
+                location: 'Treasury'
             };
         }
     }
@@ -181,7 +181,7 @@ function adjustDecimals(data) {
         let balance = Number(data[key].balance) / Math.pow(10, getDecimalForSymbol(key) || 0);
         let rewards = Number(data[key].rewards);
         if (rewards !== 0) {
-            let decimal = data[key].location === 'allianceStake' ? tokenMappings[LUNA].decimals : getDecimalForSymbol(key) || 0;
+            let decimal = data[key].location === 'Alliance' ? tokenMappings[LUNA].decimals : getDecimalForSymbol(key) || 0;
             rewards = rewards / Math.pow(10, decimal);
         }
 
