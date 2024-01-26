@@ -192,7 +192,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     const whalePrice = statData?.coinGeckoPrices.data['white-whale']?.usd || cache?.coinGeckoPrices.data['white-whale']?.usd;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
 
-    prices = {
+    let prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
@@ -283,8 +283,25 @@ router.get('/treasury', async (req, res) => {
     res.json(treasuryCache.data);
 });
 
-// router.get('/prices', async (req, res)) => {
+router.get('/prices', async (req, res) => {
+    let statData;
+    if (!cache.coinGeckoPrices) {
+        statData = await fetchStatData();
+    } 
+    const whalePrice = statData?.coinGeckoPrices.data['white-whale']?.usd || cache?.coinGeckoPrices.data['white-whale']?.usd;
+    const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
 
-// }
+    let prices = {
+        whale: whalePrice,
+        ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
+        bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
+        ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
+        wBTC: statData?.coinGeckoPrices.data['bitcoin']?.usd || cache?.coinGeckoPrices.data['bitcoin']?.usd,
+        ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
+        luna: statData?.coinGeckoPrices.data["terra-luna-2"]?.usd || cache?.coinGeckoPrices.data['terra-luna-2']?.usd,
+        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice
+    }
+    res.json(prices);
+});
 
 module.exports = router;
