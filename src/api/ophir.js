@@ -68,10 +68,22 @@ async function fetchStatData() {
     cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
     cache.ophirCirculatingSupply = await axios.get('https://therealsnack.com/ophircirculatingsupply');
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
-    cache.coinGeckoPrices = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
+    cache.coinGeckoPrices = await fetchCoinGeckoPrices(cache.coinGeckoPrices);
     cache.lastFetch = Date.now();
 
     return cache;
+}
+
+async function fetchCoinGeckoPrices(coinGeckoPrices){
+    const fiveMinutes = 300000;
+    let result = coinGeckoPrices;
+    console.log(Date.now() )
+    console.log(cache?.coinGeckoPrices?.data['white-whale']?.last_updated_at)
+    if (!cache.coinGeckoPrices || Date.now() - (cache.coinGeckoPrices.data['white-whale'].last_updated_at*1000) > fiveMinutes){
+        console.log("Cache Expired! Fetching coingecko prices...")
+        result = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
+    }
+    return result;
 }
 
 function swapKeysWithSymbols(balances) {
@@ -237,6 +249,11 @@ function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, a
 }
  
 router.get('/stats', async (req, res) => {
+    // const fiveMinutes = 300000;
+    // if (!cache.coinGeckoPrices || Date.now() - cache.coinGeckoPrices.data['white-whale'].last_updated_at > fiveMinutes){
+    //     console.log("Cache Expired! Fetching coingecko prices...")
+    //     cache.coinGeckoPrices = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
+    // }
     if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES) {
         await fetchStatData();
     }
