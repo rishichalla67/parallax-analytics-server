@@ -50,7 +50,7 @@ function filterPoolsWithPrice(data) {
     return filteredData;
 } 
 
-function getContractBalance(data){
+function getOphirContractBalance(data){
     const ophirTokenInfo = tokenMappings[OPHIR];
     ubalance = data.balances[OPHIR];
     balance = ubalance / Math.pow(10, ophirTokenInfo.decimals);
@@ -68,6 +68,7 @@ async function fetchStatData() {
     cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
     cache.ophirCirculatingSupply = await axios.get('https://therealsnack.com/ophircirculatingsupply');
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
+    cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
     cache.coinGeckoPrices = await fetchCoinGeckoPrices(cache.coinGeckoPrices);
     cache.lastFetch = Date.now();
 
@@ -258,7 +259,8 @@ router.get('/stats', async (req, res) => {
         await fetchStatData();
     }
     whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data);
-    ophirStakedSupply = getContractBalance(cache.ophirStakedSupplyRaw.data);
+    ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
+    ophirInMine = getOphirContractBalance(cache.ophirInMine.data)
     ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd;
     res.json({
         price: whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd,
@@ -266,7 +268,8 @@ router.get('/stats', async (req, res) => {
         fdv: ophirPrice*OPHIR_TOTAL_SUPPLY,
         circulatingSupply: cache.ophirCirculatingSupply.data,
         stakedSupply: ophirStakedSupply,
-        totalSupply: OPHIR_TOTAL_SUPPLY
+        totalSupply: OPHIR_TOTAL_SUPPLY,
+        ophirInMine: ophirInMine
     });
 });
 
