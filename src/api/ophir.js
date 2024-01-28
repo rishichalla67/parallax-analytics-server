@@ -226,10 +226,15 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
             totalValueWithoutOphir += balance * price;
         }
     }
+    ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
+    console.log(totalValueWithoutOphir)
+    console.log(cache.ophirCirculatingSupply.data)
+    console.log(ophirStakedSupply)
 
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
-        "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2)
+        "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2),
+        "ophirRedemptionPrice": formatNumber(totalValueWithoutOphir/(cache.ophirCirculatingSupply.data+ophirStakedSupply),4)
     };
 }
 
@@ -250,11 +255,6 @@ function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, a
 }
  
 router.get('/stats', async (req, res) => {
-    // const fiveMinutes = 300000;
-    // if (!cache.coinGeckoPrices || Date.now() - cache.coinGeckoPrices.data['white-whale'].last_updated_at > fiveMinutes){
-    //     console.log("Cache Expired! Fetching coingecko prices...")
-    //     cache.coinGeckoPrices = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
-    // }
     if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES) {
         await fetchStatData();
     }
@@ -296,7 +296,8 @@ router.get('/treasury', async (req, res) => {
         data: {
             ...adjustDecimals(totalTreasuryAssets),
             totalTreasuryValue: treasuryValues.totalTreasuryValue,
-            treasuryValueWithoutOphir: treasuryValues.treasuryValueWithoutOphir
+            treasuryValueWithoutOphir: treasuryValues.treasuryValueWithoutOphir,
+            ophirRedemptionPrice: treasuryValues.ophirRedemptionPrice
         }
     };
 
