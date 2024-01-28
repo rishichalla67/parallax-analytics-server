@@ -264,7 +264,7 @@ router.get('/stats', async (req, res) => {
     ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd;
     res.json({
         price: whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd,
-        marketCap: cache.ophirCirculatingSupply.data*ophirPrice,
+        marketCap: (cache.ophirCirculatingSupply.data+ophirStakedSupply)*ophirPrice,
         fdv: ophirPrice*OPHIR_TOTAL_SUPPLY,
         circulatingSupply: cache.ophirCirculatingSupply.data,
         stakedSupply: ophirStakedSupply,
