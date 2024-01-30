@@ -70,9 +70,9 @@ async function fetchStatData() {
     cache.ophirCirculatingSupply = await axios.get('https://therealsnack.com/ophircirculatingsupply');
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
     cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
+    cache.ophirWhalePoolData = await axios.get('https://migaloo-lcd.erisprotocol.com/cosmwasm/wasm/v1/contract/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/smart/eyJwb29sIjp7fX0=');
     cache.coinGeckoPrices = await fetchCoinGeckoPrices(cache.coinGeckoPrices);
     cache.lastFetch = Date.now();
-
     return cache;
 }
 
@@ -86,6 +86,24 @@ async function fetchCoinGeckoPrices(coinGeckoPrices){
         result = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
     }
     return result;
+}
+
+function getLPPrice(data, ophirwhaleRatio, whalePrice) {
+    // Extract total share
+    
+    const totalShare = data.data.total_share / Math.pow(10, 6);
+
+    // Process each asset
+    const assets = data.data.assets.reduce((acc, asset) => {
+        acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
+        return acc;
+    }, {});
+    console.log(assets)
+    console.log(totalShare)
+
+    let whaleValue = assets['whale']*whalePrice;
+    let ophirValue = assets['ophir']*(ophirwhaleRatio*whalePrice);
+    return (whaleValue+ophirValue)/totalShare;
 }
 
 function swapKeysWithSymbols(balances) {
@@ -312,7 +330,8 @@ router.get('/prices', async (req, res) => {
     } 
     const whalePrice = statData?.coinGeckoPrices.data['white-whale']?.usd || cache?.coinGeckoPrices.data['white-whale']?.usd;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
-
+    const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
+    console.log(ophirWhaleLpPrice)
     let prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
@@ -321,7 +340,8 @@ router.get('/prices', async (req, res) => {
         wBTC: statData?.coinGeckoPrices.data['bitcoin']?.usd || cache?.coinGeckoPrices.data['bitcoin']?.usd,
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
         luna: statData?.coinGeckoPrices.data["terra-luna-2"]?.usd || cache?.coinGeckoPrices.data['terra-luna-2']?.usd,
-        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice
+        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
+        ophirWhaleLp: ophirWhaleLpPrice
     }
     res.json(prices);
 });
