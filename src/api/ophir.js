@@ -12,9 +12,10 @@ const cache = {
     lastFetch: 0,
     whiteWhalePoolRawData: null,
     ophirCirculatingSupply: null,
-    coinGeckoPrices: null,
+    coinPrices: null,
     ophirStakedSupplyRaw: null
 };
+const priceAssetList = ['wBTC', 'luna', 'whale'];
 let treasuryCache = {
     lastFetch: 0, // Timestamp of the last fetch
     treasuryValues: null // Cached data
@@ -71,21 +72,25 @@ async function fetchStatData() {
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
     cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
     cache.ophirWhalePoolData = await axios.get('https://migaloo-lcd.erisprotocol.com/cosmwasm/wasm/v1/contract/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/smart/eyJwb29sIjp7fX0=');
-    cache.coinGeckoPrices = await fetchCoinGeckoPrices(cache.coinGeckoPrices);
+    cache.coinPrices = await fetchCoinPrices();
     cache.lastFetch = Date.now();
     return cache;
 }
 
-async function fetchCoinGeckoPrices(coinGeckoPrices){
-    const fiveMinutes = 300000;
-    let result = coinGeckoPrices;
-    console.log(Date.now() )
-    console.log(cache?.coinGeckoPrices?.data['white-whale']?.last_updated_at)
-    if (!cache.coinGeckoPrices || Date.now() - (cache.coinGeckoPrices.data['white-whale'].last_updated_at*1000) > fiveMinutes){
-        console.log("Cache Expired! Fetching coingecko prices...")
-        result = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=terra-luna-2,white-whale,bitcoin&vs_currencies=usd&include_last_updated_at=true');
+async function fetchCoinPrices(){
+    const prices = {};
+
+    for (const asset of priceAssetList) {
+      try {
+        const response = await axios.get(`https://api-osmosis.imperator.co/tokens/v2/price/${asset.toLowerCase()}`);
+        prices[asset] = response.data.price;
+      } catch (error) {
+        console.error(`Error fetching price for ${asset}:`, error);
+        prices[asset] = 'Error fetching data';
+      }
     }
-    return result;
+    console.log(prices);
+    return prices;
 }
 
 function getLPPrice(data, ophirwhaleRatio, whalePrice) {
@@ -98,8 +103,8 @@ function getLPPrice(data, ophirwhaleRatio, whalePrice) {
         acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
         return acc;
     }, {});
-    console.log(assets)
-    console.log(totalShare)
+    // console.log(assets)
+    // console.log(totalShare)
 
     let whaleValue = assets['whale']*whalePrice;
     let ophirValue = assets['ophir']*(ophirwhaleRatio*whalePrice);
@@ -218,10 +223,10 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     let totalValue = 0;
     let totalValueWithoutOphir = 0;
     let statData;
-    if (!cache.coinGeckoPrices) {
+    if (!cache.coinPrices) {
         statData = await fetchStatData();
     }
-    const whalePrice = statData?.coinGeckoPrices.data['white-whale']?.usd || cache?.coinGeckoPrices.data['white-whale']?.usd;
+    const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
 
     let prices = {
@@ -229,9 +234,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
-        wBTC: statData?.coinGeckoPrices.data['bitcoin']?.usd || cache?.coinGeckoPrices.data['bitcoin']?.usd,
+        wBTC: statData?.coinPrices['wBTC'] || cache?.coinPrices['wBTC'],
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
-        luna: statData?.coinGeckoPrices.data["terra-luna-2"]?.usd || cache?.coinGeckoPrices.data['terra-luna-2']?.usd,
+        luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice
     }
 
@@ -280,9 +285,9 @@ router.get('/stats', async (req, res) => {
     whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data);
     ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
     ophirInMine = getOphirContractBalance(cache.ophirInMine.data)
-    ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd;
+    ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinPrices["whale"];
     res.json({
-        price: whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinGeckoPrices.data["white-whale"].usd,
+        price: whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinPrices["whale"],
         marketCap: (cache.ophirCirculatingSupply.data+ophirStakedSupply)*ophirPrice,
         fdv: ophirPrice*OPHIR_TOTAL_SUPPLY,
         circulatingSupply: cache.ophirCirculatingSupply.data,
@@ -325,10 +330,10 @@ router.get('/treasury', async (req, res) => {
 
 router.get('/prices', async (req, res) => {
     let statData;
-    if (!cache.coinGeckoPrices) {
+    if (!cache.coinPrices) {
         statData = await fetchStatData();
     } 
-    const whalePrice = statData?.coinGeckoPrices.data['white-whale']?.usd || cache?.coinGeckoPrices.data['white-whale']?.usd;
+    const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     console.log(ophirWhaleLpPrice)
@@ -337,9 +342,9 @@ router.get('/prices', async (req, res) => {
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
-        wBTC: statData?.coinGeckoPrices.data['bitcoin']?.usd || cache?.coinGeckoPrices.data['bitcoin']?.usd,
+        wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
-        luna: statData?.coinGeckoPrices.data["terra-luna-2"]?.usd || cache?.coinGeckoPrices.data['terra-luna-2']?.usd,
+        luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice
     }
