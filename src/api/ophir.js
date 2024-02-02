@@ -1,10 +1,5 @@
 const express = require('express');
 const axios = require('axios');
-const redis = require('redis');
-const { response } = require('../app');
-const EIGHTEEN = 1000000000000000000;
-const EIGHT = 100000000;
-const SIX = 1000000;
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
@@ -228,6 +223,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
+    const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
 
     let prices = {
         whale: whalePrice,
@@ -237,7 +233,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         wBTC: statData?.coinPrices['wBTC'] || cache?.coinPrices['wBTC'],
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
-        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice
+        ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
+        ophirWhaleLp: ophirWhaleLpPrice
     }
 
     for (let key in balances) {
@@ -336,7 +333,7 @@ router.get('/prices', async (req, res) => {
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
-    console.log(ophirWhaleLpPrice)
+    // console.log(ophirWhaleLpPrice)
     let prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
