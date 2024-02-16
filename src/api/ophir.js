@@ -239,11 +239,13 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
-        wBTC: statData?.coinPrices['wBTC'] || cache?.coinPrices['wBTC'],
+        wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
+        wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
-        ophirWhaleLp: ophirWhaleLpPrice
+        ophirWhaleLp: ophirWhaleLpPrice,
+        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji']
     }
 
     for (let key in balances) {
