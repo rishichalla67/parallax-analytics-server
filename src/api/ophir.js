@@ -3,6 +3,7 @@ const axios = require('axios');
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
+
 const cache = {
     lastFetch: 0,
     whiteWhalePoolRawData: null,
@@ -10,7 +11,7 @@ const cache = {
     coinPrices: null,
     ophirStakedSupplyRaw: null
 };
-const priceAssetList = ['wBTC', 'luna', 'whale'];
+const priceAssetList = ['wBTC', 'luna', 'whale', 'kuji', 'wBTC.axl'];
 let treasuryCache = {
     lastFetch: 0, // Timestamp of the last fetch
     treasuryValues: null // Cached data
@@ -24,7 +25,9 @@ const tokenMappings = {
     'factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir': {symbol: 'ophir', decimals: 6},
     'uwhale': {symbol: "whale", decimals: 6},
     'ibc/EA459CE57199098BA5FFDBD3194F498AA78439328A92C7D136F06A5220903DA6': { symbol: 'ampWHALEt', decimals: 6},
-    'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTC', decimals: 8},
+    'ibc/6E5BF71FE1BEBBD648C8A7CB7A790AEF0081120B2E5746E6563FC95764716D61': { symbol: 'wBTC', decimals: 8},
+    'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
+    'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTCaxl', decimals: 8},
     'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8': {symbol: 'luna', decimals: 6},
     'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6}
   };
@@ -84,7 +87,13 @@ async function fetchCoinPrices(){
         prices[asset] = 'Error fetching data';
       }
     }
+    
+    //custom logic for '.' in asset name
+    prices.wBTCaxl = prices['wBTC.axl'];
+    delete prices['wBTC.axl'];
+
     console.log(prices);
+    
     return prices;
 }
 
@@ -340,10 +349,12 @@ router.get('/prices', async (req, res) => {
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
+        wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
         ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
-        ophirWhaleLp: ophirWhaleLpPrice
+        ophirWhaleLp: ophirWhaleLpPrice,
+        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji']
     }
     res.json(prices);
 });
