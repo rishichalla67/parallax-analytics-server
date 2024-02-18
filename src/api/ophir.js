@@ -180,9 +180,9 @@ function swapKeysWithSymbols(balances) {
 }
 
 function extractAllianceAssetBalances(dataArray) {
+    let arrayData = Array.isArray(dataArray) ? dataArray : [dataArray];
     let balances = {};
-
-    dataArray.forEach(item => {
+    arrayData.forEach(item => {
         if(item.balance > 0){
             let assetKey = item.asset.native;
             let balance = item.balance;
@@ -217,14 +217,21 @@ function combineAllianceAssetsWithRewards(assets, rewards){
     return combined;
 }
 
-function addAllianceAssetsAndRewardsToTreasury(alliance, treasury) {
+function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, treasury) {
     let combined = {};
 
     // Process alliance data
-    for (let key in alliance) {
+    for (let key in lunaAlliance) {
         combined[key] = { 
-            ...alliance[key], 
-            location: 'Alliance' 
+            ...lunaAlliance[key], 
+            location: 'Luna Alliance' 
+        };
+    }
+
+    for (let key in migalooAlliance) {
+        combined[key] = { 
+            ...migalooAlliance[key], 
+            location: 'Migaloo Alliance' 
         };
     }
 
@@ -282,6 +289,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
+    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
 
     let prices = {
         whale: whalePrice,
@@ -294,7 +302,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji']
+        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
+        whalewBtcLp: whalewBtcLpPrice
     }
 
     for (let key in balances) {
@@ -316,14 +325,23 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     };
 }
 
-function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, allianceStakingRewardsData) {
+function compactAlliance(assetData, rewardsData){
+    console.log(assetData)
+    let stakingAssets = extractAllianceAssetBalances(assetData);
+    let stakingRewards = extractAllianceRewardsPerAsset(rewardsData);
+    return combineAllianceAssetsWithRewards(stakingAssets, stakingRewards);
+}
+
+function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData) {
     // Parse the JSON data
     // const data = JSON.parse(jsonData);
 
-    let stakingAssets = extractAllianceAssetBalances(allianceStakingAssetsData);
-    let stakingRewards = extractAllianceRewardsPerAsset(allianceStakingRewardsData);
-    let unifiedAlliance = combineAllianceAssetsWithRewards(stakingAssets, stakingRewards)
-    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(unifiedAlliance, swapKeysWithSymbols(migalooTreasuryData.balances));
+    let lunaAlliance = compactAlliance(allianceStakingAssetsData, allianceStakingRewardsData);
+    let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
+
+    console.log(lunaAlliance, migalooAlliance);
+
+    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances));
     treasuryBalances = swapKeysWithSymbols(migalooTreasuryData.balances);
     treasuryDelegations = migalooTreasuryData.delegations;
     treasuryUnbondings = migalooTreasuryData.unbondings;
@@ -389,11 +407,12 @@ router.get('/treasury', async (req, res) => {
 
     // Fetch new data
     const ophirTreasuryMigalooAssets = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo10gj7p9tz9ncjk7fm7tmlax7q6pyljfrawjxjfs09a7e7g933sj0q7yeadc');
-    const ophirTreasuryOsmosisAssets = await axios.get('')
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
-    
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data);
+    const allianceMigalooStakingAssets = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0=');
+    const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
+
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
 
     // Cache the new data with the current timestamp
