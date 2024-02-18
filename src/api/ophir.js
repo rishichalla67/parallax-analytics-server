@@ -29,6 +29,7 @@ const tokenMappings = {
     'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
     'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTCaxl', decimals: 8},
     'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8': {symbol: 'luna', decimals: 6},
+    'factory/migaloo1erul6xyq0gk6ws98ncj7lnq9l4jn4gnnu9we73gdz78yyl2lr7qqrvcgup/ash': {symbol: 'ash', decimals: 6},
     'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6},
     'factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP': {symbol: 'whalewBtcLp', decimals: 6},
     'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6}
@@ -119,8 +120,6 @@ async function fetchCoinPrices(){
     //custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
-
-    console.log(prices);
     
     return prices;
 }
@@ -153,14 +152,9 @@ function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
         acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
         return acc;
     }, {});
-    console.log(assets)
-    console.log(totalShare)
 
     let whaleValue = assets['whale']*whalePrice;
     let wbtcValue = assets['wBTC']*wBTCPrice;
-    console.log(whaleValue)
-    console.log(wbtcValue)
-    console.log((whaleValue+wbtcValue)/totalShare);
     return (whaleValue+wbtcValue)/totalShare;
 }
 
@@ -217,7 +211,7 @@ function combineAllianceAssetsWithRewards(assets, rewards){
     return combined;
 }
 
-function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, treasury) {
+function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, migalooTreasury, migalooHotWallet) {
     let combined = {};
 
     // Process alliance data
@@ -236,17 +230,36 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, tr
     }
 
     // Process treasury data
-    for (let key in treasury) {
+    for (let key in migalooTreasury) {
         if (combined[key]) {
-            combined[key].balance = treasury[key];
+            combined[key].balance = migalooTreasury[key];
         } else {
             combined[key] = {
-                balance: treasury[key],
+                balance: migalooTreasury[key],
                 rewards: '0',
-                location: 'Treasury'
+                location: 'Migaloo Treasury'
             };
         }
     }
+
+    for (let key in migalooHotWallet) {
+        if (combined[key]) {
+            let oldBalance = combined[key].balance;
+            combined[key].balance = Number(combined[key].balance) + Number(migalooHotWallet[key]);
+            combined[key].location = "Migaloo Hot Wallet + Treasury"
+            combined[key].composition = {
+                "Migaloo Treasury": adjustSingleDecimal(key,oldBalance),
+                "Migaloo Hot Wallet": adjustSingleDecimal(key, migalooHotWallet[key])
+            };
+        } else {
+            combined[key] = {
+                balance: migalooHotWallet[key],
+                rewards: '0',
+                location: 'Migaloo Hot Wallet'
+            };
+        }
+    }
+
     return combined;
 }
 
@@ -257,6 +270,10 @@ function getDecimalForSymbol(symbol) {
         }
     }
     return null; // Return null if the symbol is not found
+}
+
+function adjustSingleDecimal(symbol, valueToAdjust) {
+    return valueToAdjust/ Math.pow(10, getDecimalForSymbol(symbol));
 }
 
 function adjustDecimals(data) {
@@ -273,11 +290,11 @@ function adjustDecimals(data) {
         adjustedData[key] = {
             ...data[key],
             balance: balance.toString(),
-            rewards: rewards.toString()
+            rewards: rewards.toString(),
         };
     }
     return adjustedData;
-} 
+}
 
 async function caclulateAndAddTotalTreasuryValue(balances) {
     let totalValue = 0;
@@ -326,22 +343,19 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
 }
 
 function compactAlliance(assetData, rewardsData){
-    console.log(assetData)
     let stakingAssets = extractAllianceAssetBalances(assetData);
     let stakingRewards = extractAllianceRewardsPerAsset(rewardsData);
     return combineAllianceAssetsWithRewards(stakingAssets, stakingRewards);
 }
 
-function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData) {
+function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData) {
     // Parse the JSON data
     // const data = JSON.parse(jsonData);
 
     let lunaAlliance = compactAlliance(allianceStakingAssetsData, allianceStakingRewardsData);
     let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
 
-    console.log(lunaAlliance, migalooAlliance);
-
-    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances));
+    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(migalooHotWallet.balances));
     treasuryBalances = swapKeysWithSymbols(migalooTreasuryData.balances);
     treasuryDelegations = migalooTreasuryData.delegations;
     treasuryUnbondings = migalooTreasuryData.unbondings;
@@ -407,14 +421,15 @@ router.get('/treasury', async (req, res) => {
 
     // Fetch new data
     const ophirTreasuryMigalooAssets = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo10gj7p9tz9ncjk7fm7tmlax7q6pyljfrawjxjfs09a7e7g933sj0q7yeadc');
+    const migalooHotWallet = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3')
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
     const allianceMigalooStakingAssets = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0=');
     const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
 
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data);
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
-
+    console.log(adjustDecimals(totalTreasuryAssets))
     // Cache the new data with the current timestamp
     treasuryCache = {
         lastFetch: now,
