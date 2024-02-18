@@ -29,7 +29,9 @@ const tokenMappings = {
     'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
     'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTCaxl', decimals: 8},
     'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8': {symbol: 'luna', decimals: 6},
-    'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6}
+    'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6},
+    'factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP': {symbol: 'whalewBtcLp', decimals: 6},
+    'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6}
   };
 
 const router = express.Router();
@@ -64,14 +66,40 @@ const formatNumber = (number, decimal) => {
     });
   };
 
+async function fetchWithTimeout(url, timeout = 5000, fallback = null) {
+    return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+            console.error(`Request to ${url} timed out`);
+            resolve(fallback); // Resolve with fallback on timeout
+        }, timeout);
+
+        axios.get(url).then(response => {
+            clearTimeout(timeoutId);
+            resolve(response);
+        }).catch(error => {
+            clearTimeout(timeoutId);
+            console.error(`Failed to fetch from ${url}:`, error.message);
+            resolve(fallback); // Resolve with fallback on error
+        });
+    });
+}
+
 async function fetchStatData() {
+    const ophirCirculatingSupplyResponse = await fetchWithTimeout(
+        'https://therealsnack.com/ophircirculatingsupply',
+        5000,
+        { data: OPHIR_TOTAL_SUPPLY } // Assuming OPHIR_TOTAL_SUPPLY is the desired fallback structure
+    );
+
     cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
-    cache.ophirCirculatingSupply = await axios.get('https://therealsnack.com/ophircirculatingsupply');
+    cache.ophirCirculatingSupply = ophirCirculatingSupplyResponse;
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
     cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
     cache.ophirWhalePoolData = await axios.get('https://migaloo-lcd.erisprotocol.com/cosmwasm/wasm/v1/contract/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/smart/eyJwb29sIjp7fX0=');
+    cache.whalewBtcPoolData = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/smart/eyJwb29sIjp7fX0=');
     cache.coinPrices = await fetchCoinPrices();
     cache.lastFetch = Date.now();
+
     return cache;
 }
 
@@ -113,6 +141,27 @@ function getLPPrice(data, ophirwhaleRatio, whalePrice) {
     let whaleValue = assets['whale']*whalePrice;
     let ophirValue = assets['ophir']*(ophirwhaleRatio*whalePrice);
     return (whaleValue+ophirValue)/totalShare;
+}
+
+function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
+    // Extract total share
+    const totalShare = data.data.total_share / Math.pow(10, 6);
+    // console.log(totalShare)
+    // Process each asset
+    const assets = data.data.assets.reduce((acc, asset) => {
+        // console.log(tokenMappings[asset.info.native_token.denom].symbol)
+        acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
+        return acc;
+    }, {});
+    console.log(assets)
+    console.log(totalShare)
+
+    let whaleValue = assets['whale']*whalePrice;
+    let wbtcValue = assets['wBTC']*wBTCPrice;
+    console.log(whaleValue)
+    console.log(wbtcValue)
+    console.log((whaleValue+wbtcValue)/totalShare);
+    return (whaleValue+wbtcValue)/totalShare;
 }
 
 function swapKeysWithSymbols(balances) {
@@ -259,9 +308,6 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         }
     }
     ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
-    console.log(totalValueWithoutOphir)
-    console.log(cache.ophirCirculatingSupply.data)
-    console.log(ophirStakedSupply)
 
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
@@ -287,23 +333,50 @@ function parseOphirDaoTreasury(migalooTreasuryData, allianceStakingAssetsData, a
 }
  
 router.get('/stats', async (req, res) => {
-    if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES) {
-        await fetchStatData();
+    try {
+        if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 60 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
+            await fetchStatData();
+        }
+        let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
+        try {
+            whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data);
+        } catch (error) {
+            console.error('Error filtering White Whale Pool data:', error);
+            whiteWhalePoolFilteredData = {}; // Default to empty object to prevent further errors
+        }
+        try {
+            ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
+        } catch (error) {
+            console.error('Error getting Ophir Staked Supply:', error);
+            ophirStakedSupply = 0; // Default to 0 to prevent further errors
+        }
+        try {
+            ophirInMine = getOphirContractBalance(cache.ophirInMine.data);
+        } catch (error) {
+            console.error('Error getting Ophir in Mine:', error);
+            ophirInMine = 0; // Default to 0 to prevent further errors
+        }
+        try {
+            ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"] * cache.coinPrices["whale"];
+        } catch (error) {
+            console.error('Error calculating Ophir Price:', error);
+            ophirPrice = 0; // Default to 0 to prevent further errors
+        }
+        res.json({
+            price: ophirPrice,
+            marketCap: (cache.ophirCirculatingSupply.data + ophirStakedSupply) * ophirPrice,
+            fdv: ophirPrice * OPHIR_TOTAL_SUPPLY,
+            circulatingSupply: cache.ophirCirculatingSupply.data,
+            stakedSupply: ophirStakedSupply,
+            totalSupply: OPHIR_TOTAL_SUPPLY,
+            ophirInMine: ophirInMine
+        });
+    } catch (error) {
+        console.error('An unexpected error occurred:', error);
+        res.status(500).json({ error: 'An unexpected error occurred' });
     }
-    whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data);
-    ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
-    ophirInMine = getOphirContractBalance(cache.ophirInMine.data)
-    ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinPrices["whale"];
-    res.json({
-        price: whiteWhalePoolFilteredData["OPHIR-WHALE"]*cache.coinPrices["whale"],
-        marketCap: (cache.ophirCirculatingSupply.data+ophirStakedSupply)*ophirPrice,
-        fdv: ophirPrice*OPHIR_TOTAL_SUPPLY,
-        circulatingSupply: cache.ophirCirculatingSupply.data,
-        stakedSupply: ophirStakedSupply,
-        totalSupply: OPHIR_TOTAL_SUPPLY,
-        ophirInMine: ophirInMine
-    });
 });
+
 
 router.get('/treasury', async (req, res) => {
     const now = Date.now();
@@ -316,6 +389,7 @@ router.get('/treasury', async (req, res) => {
 
     // Fetch new data
     const ophirTreasuryMigalooAssets = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo10gj7p9tz9ncjk7fm7tmlax7q6pyljfrawjxjfs09a7e7g933sj0q7yeadc');
+    const ophirTreasuryOsmosisAssets = await axios.get('')
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
     
@@ -344,6 +418,7 @@ router.get('/prices', async (req, res) => {
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
+    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     // console.log(ophirWhaleLpPrice)
     let prices = {
         whale: whalePrice,
@@ -356,7 +431,8 @@ router.get('/prices', async (req, res) => {
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji']
+        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
+        whalewBtcLp: whalewBtcLpPrice
     }
     res.json(prices);
 });
