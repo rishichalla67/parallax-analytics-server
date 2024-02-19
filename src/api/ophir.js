@@ -21,9 +21,12 @@ const CACHE_IN_MINUTES = 1 * 60 * 1000; // 5 minutes in milliseconds
 
 const tokenMappings = {
     'ibc/517E13F14A1245D4DE8CF467ADD4DA0058974CDCC880FA6AE536DBCA1D16D84E': { symbol: 'bWhale', decimals: 6 },
+    'ibc/917C4B1E92EE2F959FC11ECFC435C4048F97E8B00F9444592706F4604F24BF25': {symbol: 'bWhale', decimals: 6},
     'ibc/B3F639855EE7478750CC8F82072307ED6E131A8EFF20345E1D136B50C4E5EC36': { symbol: 'ampWhale', decimals: 6 },
+    'ibc/834D0AEF380E2A490E4209DFF2785B8DBB7703118C144AC373699525C65B4223': {symbol: 'ampWhale', decimals: 6},
     'factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir': {symbol: 'ophir', decimals: 6},
     'uwhale': {symbol: "whale", decimals: 6},
+    'ibc/EDD6F0D66BCD49C1084FB2C35353B4ACD7B9191117CE63671B61320548F7C89D': {symbol: "whale", decimals: 6},
     'ibc/EA459CE57199098BA5FFDBD3194F498AA78439328A92C7D136F06A5220903DA6': { symbol: 'ampWHALEt', decimals: 6},
     'ibc/6E5BF71FE1BEBBD648C8A7CB7A790AEF0081120B2E5746E6563FC95764716D61': { symbol: 'wBTC', decimals: 8},
     'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
@@ -32,7 +35,8 @@ const tokenMappings = {
     'factory/migaloo1erul6xyq0gk6ws98ncj7lnq9l4jn4gnnu9we73gdz78yyl2lr7qqrvcgup/ash': {symbol: 'ash', decimals: 6},
     'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6},
     'factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP': {symbol: 'whalewBtcLp', decimals: 6},
-    'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6}
+    'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6},
+    'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6}
   };
 
 const router = express.Router();
@@ -158,6 +162,22 @@ function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
     return (whaleValue+wbtcValue)/totalShare;
 }
 
+function getSailPriceFromLp(data, whalePrice){
+    // console.log(totalShare)
+    // Process each asset
+    console.log(data.data.assets)
+    const assets = data.data.assets.reduce((acc, asset) => {
+        // console.log(tokenMappings[asset.info.native_token.denom].symbol)
+        console.log(tokenMappings[asset.info.native_token.denom].symbol);
+        acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
+        return acc;
+    }, {});
+
+    let whaleValue = assets['whale']*whalePrice;
+    let sailPrice = whaleValue/assets['sail'];
+    return sailPrice;
+}
+
 function swapKeysWithSymbols(balances) {
     let swappedBalances = {};
 
@@ -211,7 +231,7 @@ function combineAllianceAssetsWithRewards(assets, rewards){
     return combined;
 }
 
-function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, migalooTreasury, migalooHotWallet) {
+function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, migalooTreasury, migalooHotWallet, stakedSail, osmosisWWAssets) {
     let combined = {};
 
     // Process alliance data
@@ -242,6 +262,34 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
         }
     }
 
+    
+    for (let key in osmosisWWAssets) {
+        if (combined[key]) {
+            console.log(key)
+            let oldBalance = combined[key].balance;
+            let oldRewards = combined[key].rewards;
+            combined[key].balance = Number(combined[key].balance) + Number(osmosisWWAssets[key].balance);
+            combined[key].location = "WW Osmosis + Luna Alliance"
+            combined[key].rewards = oldRewards;
+            combined[key].composition = {
+                "Luna Alliance": adjustSingleDecimal(key,oldBalance),
+                "WW Osmosis": adjustSingleDecimal(key, osmosisWWAssets[key].balance)
+            };
+        } else {combined[key] = { 
+            ...osmosisWWAssets[key], 
+            rewards: '0',
+            location: 'WW Osmosis' 
+            };
+        }
+    }
+
+    // add staked sail
+    combined['sail'] = {
+        balance: stakedSail,
+        rewards: '0',
+        location: "Staked in Sail DAO"
+    }
+
     for (let key in migalooHotWallet) {
         if (combined[key]) {
             let oldBalance = combined[key].balance;
@@ -261,6 +309,26 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
     }
 
     return combined;
+}
+
+function getOsmosisBondedAssets(osmosisWWBondedAssets) {
+    const bondedAssets = osmosisWWBondedAssets.data.bonded_assets;
+    const totalBonded = osmosisWWBondedAssets.data.total_bonded;
+    const output = {};
+
+    bondedAssets.forEach(asset => {
+        const denom = asset.info.native_token.denom;
+        const amount = asset.amount;
+        const tokenInfo = tokenMappings[denom];
+        if (tokenInfo) {
+            const balance = Number(amount) / Math.pow(10, getDecimalForSymbol(denom));
+            output[tokenInfo.symbol] = {
+                balance: balance,
+                location: "WW Osmosis"
+            };
+        }
+    });
+    return output;
 }
 
 function getDecimalForSymbol(symbol) {
@@ -307,6 +375,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
+    const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
 
     let prices = {
         whale: whalePrice,
@@ -320,7 +389,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
         kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
-        whalewBtcLp: whalewBtcLpPrice
+        whalewBtcLp: whalewBtcLpPrice,
+        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice)
     }
 
     for (let key in balances) {
@@ -348,14 +418,17 @@ function compactAlliance(assetData, rewardsData){
     return combineAllianceAssetsWithRewards(stakingAssets, stakingRewards);
 }
 
-function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData) {
+function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData, stakedSail, osmosisWWBondedAssets) {
     // Parse the JSON data
     // const data = JSON.parse(jsonData);
 
     let lunaAlliance = compactAlliance(allianceStakingAssetsData, allianceStakingRewardsData);
     let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
 
-    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(migalooHotWallet.balances));
+    let osmosisWWAssets = getOsmosisBondedAssets(osmosisWWBondedAssets);
+    console.log(osmosisWWAssets)
+
+    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(migalooHotWallet.balances), stakedSail, osmosisWWAssets);
     treasuryBalances = swapKeysWithSymbols(migalooTreasuryData.balances);
     treasuryDelegations = migalooTreasuryData.delegations;
     treasuryUnbondings = migalooTreasuryData.unbondings;
@@ -426,8 +499,10 @@ router.get('/treasury', async (req, res) => {
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
     const allianceMigalooStakingAssets = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0=');
     const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
+    const stakedSailAmount = await axios.get('https://indexer.daodao.zone/osmosis-1/contract/osmo14gz8xpzm5sj9acxfmgzzqh0strtuyhce08zm7pmqlkq6n4g5g6wq0924n8/daoVotingTokenStaked/votingPower?address=osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf');
+    const osmosisWWBondedAssets = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1mfqvxmv2gx62hglaegdv3useqjj44kxrl69nlt4tkysy9dx8g25sq40kez/smart/ewogICJib25kZWQiOiB7CiAgICAiYWRkcmVzcyI6ICJvc21vMXR6bDAzNjJsZHRzcmFkc2duNGdtdThwZDg3OTRxank2NmNsOHEyZmY0M2V2Y2xnd2Q3N3MycXZ3bDYiCiAgfQp9');
 
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data);
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
     console.log(adjustDecimals(totalTreasuryAssets))
     // Cache the new data with the current timestamp
@@ -453,6 +528,7 @@ router.get('/prices', async (req, res) => {
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
+    const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
     // console.log(ophirWhaleLpPrice)
     let prices = {
         whale: whalePrice,
@@ -466,7 +542,8 @@ router.get('/prices', async (req, res) => {
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
         kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
-        whalewBtcLp: whalewBtcLpPrice
+        whalewBtcLp: whalewBtcLpPrice,
+        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice)
     }
     res.json(prices);
 });
