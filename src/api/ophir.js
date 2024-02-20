@@ -1,5 +1,7 @@
 const express = require('express');
 const axios = require('axios');
+const { getDatabase } = require('firebase-admin/database');
+const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
@@ -11,6 +13,7 @@ const cache = {
     coinPrices: null,
     ophirStakedSupplyRaw: null
 };
+var serviceAccount = require("../../resources/firebase/firebase-admin.json");
 const priceAssetList = ['wBTC', 'luna', 'whale', 'kuji', 'wBTC.axl'];
 let treasuryCache = {
     lastFetch: 0, // Timestamp of the last fetch
@@ -39,6 +42,15 @@ const tokenMappings = {
     'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6}
   };
 
+if (admin.apps.length === 0) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: "https://parallax-analytics-server-default-rtdb.firebaseio.com"
+    });
+}
+
+const db = getDatabase();
+const firebaseOphirTreasury = db.ref('crypto/ophir/treasury');
 const router = express.Router();
 // const redisClient = redis.createClient({
 //   // url: `${process.env.REDIS_URL}` 
@@ -163,12 +175,7 @@ function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
 }
 
 function getSailPriceFromLp(data, whalePrice){
-    // console.log(totalShare)
-    // Process each asset
-    console.log(data.data.assets)
     const assets = data.data.assets.reduce((acc, asset) => {
-        // console.log(tokenMappings[asset.info.native_token.denom].symbol)
-        console.log(tokenMappings[asset.info.native_token.denom].symbol);
         acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
         return acc;
     }, {});
@@ -484,12 +491,20 @@ router.get('/stats', async (req, res) => {
 
 
 router.get('/treasury', async (req, res) => {
+    res.json(await getTreasuryAssets());
+});
+
+router.get('/prices', async (req, res) => {
+    res.json(await getPrices());
+});
+
+async function getTreasuryAssets(){
     const now = Date.now();
     const oneMinute = 60000; // 60000 milliseconds in a minute
 
     // Check if cache is valid
     if (treasuryCache.lastFetch > now - oneMinute && treasuryCache.data) {
-        return res.json(treasuryCache.data); // Return cached data if it's less than 1 minute old
+        return treasuryCache.data; // Return cached data if it's less than 1 minute old
     }
 
     // Fetch new data
@@ -516,10 +531,10 @@ router.get('/treasury', async (req, res) => {
         }
     };
 
-    res.json(treasuryCache.data);
-});
+    return treasuryCache.data
+}
 
-router.get('/prices', async (req, res) => {
+async function getPrices(){
     let statData;
     if (!cache.coinPrices) {
         statData = await fetchStatData();
@@ -529,7 +544,7 @@ router.get('/prices', async (req, res) => {
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
-    // console.log(ophirWhaleLpPrice)
+
     let prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
@@ -545,7 +560,74 @@ router.get('/prices', async (req, res) => {
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice)
     }
-    res.json(prices);
-});
+    return prices;
+}
+
+async function getTreasuryValues(priceData, treasuryAssets) {
+    const result = Object.keys(treasuryAssets).reduce((acc, assetKey) => {
+      // Skip non-asset properties
+      if (["totalTreasuryValue", "treasuryValueWithoutOphir", "ophirRedemptionPrice"].includes(assetKey)) return acc;
+  
+      const asset = treasuryAssets[assetKey];
+      const assetPrice = priceData[assetKey];
+      if (!assetPrice || isNaN(assetPrice)) return acc; // Skip if price is 0 or NaN
+  
+      let assetValue = assetPrice * parseFloat(asset.balance);
+      if (!assetValue || isNaN(assetValue)) return acc; // Skip if calculated value is 0 or NaN
+  
+      acc.push({
+        [assetKey]: {
+          price: assetPrice,
+          value: assetValue,
+          timestamp: new Date().toISOString()
+        }
+      });
+  
+      return acc;
+    }, []);
+  
+    return result;
+  }
+  
+  async function pushTreasuryValuesToFirebase(treasuryValues) {
+    // Ensure the Firestore reference is correct
+
+    treasuryValues.forEach(async (item) => {
+        const assetName = Object.keys(item)[0];
+        // Retrieve the current array (if exists) or initialize an empty array
+        const currentDataSnapshot = await firebaseOphirTreasury.child(assetName).once('value');
+        let currentData = currentDataSnapshot.val();
+        if (!currentData) {
+            currentData = []; // Initialize as an empty array if no current data
+        }
+        currentData.push(item[assetName]); // Add new item to the array
+
+        // Update the entire array back to Firebase under the assetName
+        firebaseOphirTreasury.child(assetName).set(currentData)
+        .catch((error) => {
+            console.error('Error updating data in Firebase:', error);
+        });
+    });
+    console.log("Treasury Data Saved");
+}
+
+
+const fetchDataAndStore = async () => {
+    try {
+      // Fetching price data
+      const priceData = await getPrices(); // Adjust based on your data structure
+      // Fetching treasury assets
+      const treasuryAssets = await getTreasuryAssets(); // Adjust based on your data structure
+  
+      const combinedData = await getTreasuryValues(priceData, treasuryAssets);
+      // Storing data in Firebase
+      pushTreasuryValuesToFirebase(combinedData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  // Run fetchDataAndStore every 5 minutes
+  setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
 module.exports = router;
