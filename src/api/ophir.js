@@ -536,9 +536,12 @@ async function getTreasuryAssets(){
 
 async function getPrices(){
     let statData;
-    if (!cache.coinPrices) {
-        statData = await fetchStatData();
-    } 
+    const now = Date.now();
+    const oneMinute = 60000; // 60000 milliseconds in a minute
+    // Check if cache is valid
+    if (!cache.coinPrices || cache.lastFetch > now - oneMinute) {
+        statData = await fetchStatData(); // Return cached data if it's less than 1 minute old
+    }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
@@ -579,6 +582,7 @@ async function getTreasuryValues(priceData, treasuryAssets) {
         [assetKey]: {
           price: assetPrice,
           value: assetValue,
+          asset: asset.balance,
           timestamp: new Date().toISOString()
         }
       });
@@ -590,24 +594,23 @@ async function getTreasuryValues(priceData, treasuryAssets) {
   }
   
   async function pushTreasuryValuesToFirebase(treasuryValues) {
-    // Ensure the Firestore reference is correct
-
-    treasuryValues.forEach(async (item) => {
+    for (const item of treasuryValues) { // Changed to for...of loop for async/await
         const assetName = Object.keys(item)[0];
-        // Retrieve the current array (if exists) or initialize an empty array
-        const currentDataSnapshot = await firebaseOphirTreasury.child(assetName).once('value');
-        let currentData = currentDataSnapshot.val();
-        if (!currentData) {
-            currentData = []; // Initialize as an empty array if no current data
-        }
-        currentData.push(item[assetName]); // Add new item to the array
-
-        // Update the entire array back to Firebase under the assetName
-        firebaseOphirTreasury.child(assetName).set(currentData)
-        .catch((error) => {
+        const assetDataRef = firebaseOphirTreasury.child(assetName);
+        // Using transaction to ensure data integrity and avoid race conditions
+        await assetDataRef.transaction(currentData => {
+            if (currentData === null) {
+                // Initialize with the first item if no current data
+                return [item[assetName]];
+            } else {
+                // Add new item to the existing array
+                currentData.push(item[assetName]);
+                return currentData; // Return the updated array to be saved
+            }
+        }).catch((error) => {
             console.error('Error updating data in Firebase:', error);
         });
-    });
+    }
     console.log("Treasury Data Saved");
 }
 
@@ -615,9 +618,9 @@ async function getTreasuryValues(priceData, treasuryAssets) {
 const fetchDataAndStore = async () => {
     try {
       // Fetching price data
-      const priceData = await getPrices(); // Adjust based on your data structure
+      const priceData = await getPrices(); 
       // Fetching treasury assets
-      const treasuryAssets = await getTreasuryAssets(); // Adjust based on your data structure
+      const treasuryAssets = await getTreasuryAssets(); 
   
       const combinedData = await getTreasuryValues(priceData, treasuryAssets);
       // Storing data in Firebase
