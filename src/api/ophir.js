@@ -539,8 +539,8 @@ async function getPrices(){
     const now = Date.now();
     const oneMinute = 60000; // 60000 milliseconds in a minute
     // Check if cache is valid
-    if (!cache.coinPrices || cache.lastFetch > now - oneMinute) {
-        statData = await fetchStatData(); // Return cached data if it's less than 1 minute old
+    if (now - cache.lastFetch > oneMinute || !cache.coinPrices) {
+        statData = await fetchStatData(); // Fetch new data if cache is older than 1 minute or coinPrices is not cached
     }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
