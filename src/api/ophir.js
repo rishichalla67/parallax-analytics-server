@@ -270,7 +270,6 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
         }
     }
 
-    
     for (let key in osmosisWWAssets) {
         if (combined[key]) {
             console.log(key)
@@ -314,6 +313,17 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
                 location: 'Migaloo Hot Wallet'
             };
         }
+    }
+
+    // Special handling for wBTC
+    if (combined['wBTC']) {
+        let originalAmount = combined['wBTC'].balance;
+        combined['wBTC'].balance = Number(combined['wBTC'].balance) + 28676272;
+        combined['wBTC'].location = "Migaloo Treasury + Migaloo Alliance";
+        combined['wBTC'].composition = {
+            "Migaloo Treasury": adjustSingleDecimal('wBTC', originalAmount),
+            "Migaloo Alliance": adjustSingleDecimal('wBTC', 28676272)
+        };
     }
 
     return combined;
