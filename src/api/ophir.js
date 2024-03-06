@@ -5,7 +5,7 @@ const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
-
+const AMPROAR_ERIS_CONSTANT = 1.0198;
 const cache = {
     lastFetch: 0,
     whiteWhalePoolRawData: null,
@@ -40,7 +40,8 @@ const tokenMappings = {
     'factory/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/uLP': {symbol: 'ophirWhaleLp', decimals: 6},
     'factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP': {symbol: 'whalewBtcLp', decimals: 6},
     'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6},
-    'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6}
+    'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6},
+    'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -133,11 +134,24 @@ async function fetchCoinPrices(){
         prices[asset] = 'Error fetching data';
       }
     }
+
+    const currentTime = Date.now();
+    if (!cache.ampRoarPriceLastFetch || currentTime - cache.ampRoarPriceLastFetch > 1800000) { // 30 minutes in milliseconds
+        try {
+            const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=lion-dao&vs_currencies=usd');
+            cache.ampRoarPrice = response.data['lion-dao'].usd;
+            cache.ampRoarPriceLastFetch = currentTime;
+        } catch (error) {
+            console.error('Error fetching ampRoar price:', error);
+            cache.ampRoarPrice = cache.ampRoarPrice || 'Error fetching data'; // Use the old price if available, else mark as error
+        }
+    }
+    prices['ampRoar'] = cache.ampRoarPrice*AMPROAR_ERIS_CONSTANT;
     
     //custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
-    
+
     return prices;
 }
 
@@ -239,7 +253,7 @@ function combineAllianceAssetsWithRewards(assets, rewards){
     return combined;
 }
 
-function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, migalooTreasury, migalooHotWallet, stakedSail, osmosisWWAssets) {
+function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, migalooTreasury, migalooHotWallet, stakedSail, osmosisWWAssets, ampRoarAllianceStakedAndRewards) {
     let combined = {};
 
     // Process alliance data
@@ -272,7 +286,7 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
 
     for (let key in osmosisWWAssets) {
         if (combined[key]) {
-            console.log(key)
+            // console.log(key)
             let oldBalance = combined[key].balance;
             let oldRewards = combined[key].rewards;
             combined[key].balance = Number(combined[key].balance) + Number(osmosisWWAssets[key].balance);
@@ -325,6 +339,25 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
             "Migaloo Alliance": adjustSingleDecimal('wBTC', 28676272)
         };
     }
+
+    let ampRoarBalance = 0;
+    let ampRoarRewards = 0;
+
+
+    ampRoarAllianceStakedAndRewards.delegations.forEach(delegation => {
+        ampRoarBalance += Number(delegation.balance.amount);
+        delegation.delegation.reward_history.forEach(reward => {
+            if (reward.denom === 'uluna') {
+                ampRoarRewards += Number(reward.index); // Assuming index is the reward amount
+            }
+        });
+    });
+
+    combined['ampRoar'] = {
+        balance: ampRoarBalance,
+        rewards: ampRoarRewards,
+        location: "ampRoar Alliance Staked"
+    };
 
     return combined;
 }
@@ -410,7 +443,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
-        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice)
+        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
+        ampRoar: cache.ampRoarPrice
     }
 
     for (let key in balances) {
@@ -438,7 +472,7 @@ function compactAlliance(assetData, rewardsData){
     return combineAllianceAssetsWithRewards(stakingAssets, stakingRewards);
 }
 
-function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData, stakedSail, osmosisWWBondedAssets) {
+function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData, stakedSail, osmosisWWBondedAssets, ampRoarAllianceStakedAndRewards) {
     // Parse the JSON data
     // const data = JSON.parse(jsonData);
 
@@ -446,9 +480,9 @@ function parseOphirDaoTreasury(migalooTreasuryData, migalooHotWallet, allianceSt
     let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
 
     let osmosisWWAssets = getOsmosisBondedAssets(osmosisWWBondedAssets);
-    console.log(osmosisWWAssets) 
+    // console.log(osmosisWWAssets) 
 
-    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(migalooHotWallet.balances), stakedSail, osmosisWWAssets);
+    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(migalooHotWallet.balances), stakedSail, osmosisWWAssets, ampRoarAllianceStakedAndRewards);
     treasuryBalances = swapKeysWithSymbols(migalooTreasuryData.balances);
     treasuryDelegations = migalooTreasuryData.delegations;
     treasuryUnbondings = migalooTreasuryData.unbondings;
@@ -529,10 +563,11 @@ async function getTreasuryAssets(){
     const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
     const stakedSailAmount = await axios.get('https://indexer.daodao.zone/osmosis-1/contract/osmo14gz8xpzm5sj9acxfmgzzqh0strtuyhce08zm7pmqlkq6n4g5g6wq0924n8/daoVotingTokenStaked/votingPower?address=osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf');
     const osmosisWWBondedAssets = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1mfqvxmv2gx62hglaegdv3useqjj44kxrl69nlt4tkysy9dx8g25sq40kez/smart/ewogICJib25kZWQiOiB7CiAgICAiYWRkcmVzcyI6ICJvc21vMXR6bDAzNjJsZHRzcmFkc2duNGdtdThwZDg3OTRxank2NmNsOHEyZmY0M2V2Y2xnd2Q3N3MycXZ3bDYiCiAgfQp9');
+    const ampRoarAllianceStakedAndRewards = await axios.get('https://phoenix-lcd.terra.dev/terra/alliances/delegations/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3');
 
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data);
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStakedAndRewards.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
-    console.log(adjustDecimals(totalTreasuryAssets))
+    // console.log(adjustDecimals(totalTreasuryAssets))
     // Cache the new data with the current timestamp
     treasuryCache = {
         lastFetch: now,
@@ -576,7 +611,8 @@ async function getPrices(){
         kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
-        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice)
+        sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
+        ampRoar: cache.ampRoarPrice
     }
     return prices;
 }
