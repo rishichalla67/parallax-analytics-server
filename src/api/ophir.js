@@ -684,4 +684,41 @@ const fetchDataAndStore = async () => {
   // Run fetchDataAndStore every 5 minutes
   setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
+
+// Endpoint to get historical treasury data for a specific asset
+router.get('/treasury/chartData/:assetName', async (req, res) => {
+  const { assetName } = req.params;
+  const assetDataRef = firebaseOphirTreasury.child(assetName);
+
+  try {
+    const snapshot = await assetDataRef.once('value');
+    let data = snapshot.val();
+
+    if (data && data.length > 0) { // Check if data exists and is not empty after filtering
+      res.json(data);
+    } else {
+      res.status(404).send('Asset data not found or no data in the specified date range');
+    }
+  } catch (error) {
+    console.error('Error fetching treasury data:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// Endpoint to get all treasury data
+router.get('/treasury/chartData', async (req, res) => {
+  try {
+    const snapshot = await firebaseOphirTreasury.once('value');
+    const data = snapshot.val();
+    if (data) {
+      res.json(data);
+    } else {
+      res.status(404).send('No treasury data found');
+    }
+  } catch (error) {
+    console.error('Error fetching all treasury data:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
 module.exports = router;
