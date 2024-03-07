@@ -5,7 +5,9 @@ const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
-const AMPROAR_ERIS_CONSTANT = 1.0198;
+const AMPROAR_ERIS_CONSTANT = 1.0199;
+const api_key = "cc089c26-c0ec-43c0-8bbe-093b47d1d338";
+
 const cache = {
     lastFetch: 0,
     whiteWhalePoolRawData: null,
@@ -135,19 +137,18 @@ async function fetchCoinPrices(){
       }
     }
 
-    const currentTime = Date.now();
-    if (!cache.ampRoarPriceLastFetch || currentTime - cache.ampRoarPriceLastFetch > 1800000) { // 30 minutes in milliseconds
-        try {
-            const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=lion-dao&vs_currencies=usd');
-            cache.ampRoarPrice = response.data['lion-dao'].usd;
-            cache.ampRoarPriceLastFetch = currentTime;
-        } catch (error) {
-            console.error('Error fetching ampRoar price:', error);
-            cache.ampRoarPrice = cache.ampRoarPrice || 'Error fetching data'; // Use the old price if available, else mark as error
+    const roarPriceResponse = await axios.post('https://api.livecoinwatch.com/coins/single', {
+        currency: "USD",
+        code: "____ROAR",
+        meta: false
+    }, {
+        headers: {
+            'X-Api-Key': api_key
         }
-    }
-    prices['ampRoar'] = cache.ampRoarPrice*AMPROAR_ERIS_CONSTANT;
-    
+    });
+    const roarPrice = roarPriceResponse.data.rate;
+    prices['ampRoar'] = roarPrice*AMPROAR_ERIS_CONSTANT;
+
     //custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
@@ -444,7 +445,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        ampRoar: cache.ampRoarPrice
+        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar']
     }
 
     for (let key in balances) {
@@ -596,7 +597,7 @@ async function getPrices(){
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
     const ampKujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
-
+    
     let prices = {
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
@@ -612,7 +613,7 @@ async function getPrices(){
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        ampRoar: cache.ampRoarPrice
+        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar']
     }
     return prices;
 }
