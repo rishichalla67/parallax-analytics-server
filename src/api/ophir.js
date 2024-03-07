@@ -143,7 +143,8 @@ async function fetchCoinPrices(){
         meta: false
     }, {
         headers: {
-            'X-Api-Key': api_key
+            'X-Api-Key': api_key,
+            'Access-Control-Allow-Origin': '*'
         }
     });
     const roarPrice = roarPriceResponse.data.rate;
@@ -720,5 +721,61 @@ router.get('/treasury/chartData', async (req, res) => {
     res.status(500).send('Internal server error');
   }
 });
+
+router.get('/treasury/totalValueChartData', async (req, res) => {
+    try {
+        const snapshot = await firebaseOphirTreasury.once('value');
+        const data = snapshot.val();
+        if (!data) {
+            return res.status(404).send('No treasury data found');
+        }
+
+        const dailySummaries = Object.keys(data).reduce((acc, assetName) => {
+            const assetData = data[assetName];
+            // Track assets added for each day to prevent duplicates
+            const addedAssetsForDay = {};
+            assetData.forEach(item => {
+                const timestamp = new Date(item.timestamp);
+                const date = timestamp.toISOString().split('T')[0]; // Get date in YYYY-MM-DD format
+                const utcHour = timestamp.getUTCHours();
+                const utcMinutes = timestamp.getUTCMinutes();
+
+                // Check if timestamp is between 12:00 PM UTC and 12:05 PM UTC
+                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 5) {
+                    // Initialize the array for the date if it doesn't exist
+                    if (!addedAssetsForDay[date]) {
+                        addedAssetsForDay[date] = [];
+                    }
+                    // Check if the asset has already been added for the day
+                    if (addedAssetsForDay[date].includes(assetName)) {
+                        // Skip this asset since it's already been counted for the day
+                        return;
+                    }
+                    // console.log(`Adding data for ${date}:`, item);
+                    if (!acc[date]) {
+                        acc[date] = { totalValue: 0 };
+                    }
+                    acc[date].totalValue += item.value;
+                    // Mark this asset as added for the day
+                    addedAssetsForDay[date].push(assetName);
+                    // console.log(`Updated total value for ${date}: ${acc[date].totalValue}`);
+                }
+            });
+            return acc;
+        }, {});
+
+        // Convert the summaries into an array format
+        const summariesArray = Object.keys(dailySummaries).map(date => ({
+            date: date,
+            totalValue: dailySummaries[date].totalValue
+        }));
+
+        res.json(summariesArray);
+    } catch (error) {
+        console.error('Error fetching daily treasury summary:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
 
 module.exports = router;
