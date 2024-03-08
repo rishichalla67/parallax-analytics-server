@@ -842,6 +842,6 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
 
 
 // Run fetchDataAndStore every 5 minutes
-// setInterval(fetchDataAndStore, 5 * 60 * 1000);
+setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
 module.exports = router;
