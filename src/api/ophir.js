@@ -757,7 +757,7 @@ const fetchDataAndStore = async () => {
   };
 
   // Run fetchDataAndStore every 5 minutes
-  setInterval(fetchDataAndStore, 5 * 60 * 1000);
+//   setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
 
 // Endpoint to get historical treasury data for a specific asset
