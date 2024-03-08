@@ -6,6 +6,7 @@ const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
 const AMPROAR_ERIS_CONSTANT = 1.0199;
+const MUSDC_ERIS_CONSTANT = 1.0208;
 const api_key = "cc089c26-c0ec-43c0-8bbe-093b47d1d338";
 
 const cache = {
@@ -43,7 +44,8 @@ const tokenMappings = {
     'factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP': {symbol: 'whalewBtcLp', decimals: 6},
     'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6},
     'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6},
-    'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6}
+    'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6},
+    'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'mUSDC', decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -444,7 +446,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar']
+        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
+        ampUSDC: 1*MUSDC_ERIS_CONSTANT
     }
 
     for (let key in balances) {
@@ -613,7 +616,8 @@ async function getPrices(){
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar']
+        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
+        ampUSDC: 1*MUSDC_ERIS_CONSTANT
     }
     return prices;
 }
