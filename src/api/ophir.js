@@ -17,7 +17,7 @@ const cache = {
     ophirStakedSupplyRaw: null
 };
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
-const priceAssetList = ['wBTC', 'luna', 'whale', 'kuji', 'wBTC.axl'];
+const priceAssetList = ['wBTC', 'luna', 'whale', 'wBTC.axl'];
 let treasuryCache = {
     lastFetch: 0, // Timestamp of the last fetch
     treasuryValues: null // Cached data
@@ -45,7 +45,7 @@ const tokenMappings = {
     'factory/migaloo1xv4ql6t6r8zawlqn2tyxqsrvjpmjfm6kvdfvytaueqe3qvcwyr7shtx0hj/uLP': {symbol: 'usdcWhaleLp', decimals: 6},
     'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6},
     'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6},
-    'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'mUSDC', decimals: 6},
+    'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'ampUSDC', decimals: 6},
     'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'axlUSDC', decimals: 6}
   };
 
@@ -431,6 +431,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
     const ampKujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
+    const kujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
 
     let prices = {
         whale: whalePrice,
@@ -443,7 +444,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
+        kuji: kujiPrice.data.exchange_rate,
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
@@ -602,6 +603,7 @@ async function getPrices(){
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
     const ampKujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
+    const kujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
     
     let prices = {
         whale: whalePrice,
@@ -614,7 +616,7 @@ async function getPrices(){
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: statData?.coinPrices["kuji"] || cache?.coinPrices['kuji'],
+        kuji: kujiPrice.data.exchange_rate,
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
