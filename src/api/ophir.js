@@ -654,27 +654,92 @@ async function getTreasuryValues(priceData, treasuryAssets) {
     return result;
   }
   
-  async function pushTreasuryValuesToFirebase(treasuryValues) {
-    for (const item of treasuryValues) { // Changed to for...of loop for async/await
+  async function pushTreasuryValuesToFirebase(treasuryValues, priceData) {
+    const previouslyRecordedDenoms = await fetchPreviouslyRecordedDenomsWithFlags();
+    const currentDenoms = treasuryValues.map(item => Object.keys(item)[0]);
+
+    const missingDenoms = previouslyRecordedDenoms.filter(denom => 
+        !currentDenoms.includes(denom.name) && !denom.finalRecordPushed);
+
+    for (const item of treasuryValues) {
         const assetName = Object.keys(item)[0];
         const assetDataRef = firebaseOphirTreasury.child(assetName);
-        // Using transaction to ensure data integrity and avoid race conditions
         await assetDataRef.transaction(currentData => {
+            // Ensure currentData is an array before attempting to push
             if (currentData === null) {
-                // Initialize with the first item if no current data
                 return [item[assetName]];
-            } else {
-                // Add new item to the existing array
+            } else if (Array.isArray(currentData)) {
                 currentData.push(item[assetName]);
-                return currentData; // Return the updated array to be saved
+                return currentData;
+            } else {
+                // Handle the case where currentData is not an array
+                // For example, convert currentData to an array with its current value, then push
+                return [currentData].concat(item[assetName]);
             }
         }).catch((error) => {
             console.error('Error updating data in Firebase:', error);
         });
     }
+
+    for (const denom of missingDenoms) {
+        const price = priceData[denom.name] || 0;
+        const finalRecord = {
+            asset: 0,
+            price: price,
+            timestamp: new Date().toISOString(),
+            value: 0
+        };
+
+        const assetDataRef = firebaseOphirTreasury.child(denom.name);
+        await assetDataRef.transaction(currentData => {
+            // Ensure currentData is an array before attempting to push
+            if (currentData === null) {
+                return [finalRecord];
+            } else if (Array.isArray(currentData)) {
+                currentData.push(finalRecord);
+                return currentData;
+            } else {
+                // Handle the case where currentData is not an array
+                return [currentData].concat(finalRecord);
+            }
+        }).catch((error) => {
+            console.error('Error updating data in Firebase for missing denom:', error);
+        });
+
+        updateFinalRecordFlag(denom.name);
+    }
+
     console.log("Treasury Data Saved");
 }
 
+
+async function fetchPreviouslyRecordedDenomsWithFlags() {
+    const snapshot = await firebaseOphirTreasury.once('value');
+    const data = snapshot.val();
+    const denomsWithFlags = [];
+
+    // Assuming each child key is a denom name and each has a finalRecordPushed field
+    for (const [denomName, denomData] of Object.entries(data)) {
+        denomsWithFlags.push({
+            name: denomName,
+            finalRecordPushed: denomData.finalRecordPushed || false
+        });
+    }
+
+    return denomsWithFlags;
+}
+
+async function updateFinalRecordFlag(denomName) {
+    // Reference the specific denom document
+    const denomRef = firebaseOphirTreasury.child(denomName);
+
+    // Update the finalRecordPushed flag for this denom
+    await denomRef.update({
+        finalRecordPushed: true
+    }).catch((error) => {
+        console.error(`Error updating finalRecordPushed flag for ${denomName}:`, error);
+    });
+}
 
 const fetchDataAndStore = async () => {
     try {
@@ -685,7 +750,7 @@ const fetchDataAndStore = async () => {
   
       const combinedData = await getTreasuryValues(priceData, treasuryAssets);
       // Storing data in Firebase
-      pushTreasuryValuesToFirebase(combinedData);
+      pushTreasuryValuesToFirebase(combinedData, priceData);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
