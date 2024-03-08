@@ -619,7 +619,8 @@ async function getPrices(){
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
         ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
-        ampUSDC: 1*MUSDC_ERIS_CONSTANT
+        ampUSDC: 1*MUSDC_ERIS_CONSTANT,
+        axlUSDC: 1.00
     }
     return prices;
 }
