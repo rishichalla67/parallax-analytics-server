@@ -746,9 +746,6 @@ const fetchDataAndStore = async () => {
     }
   };
 
-  // Run fetchDataAndStore every 5 minutes
-  setInterval(fetchDataAndStore, 5 * 60 * 1000);
-
 
 // Endpoint to get historical treasury data for a specific asset
 router.get('/treasury/chartData/:assetName', async (req, res) => {
@@ -840,5 +837,11 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
+
+
+
+
+// Run fetchDataAndStore every 5 minutes
+// setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
 module.exports = router;
