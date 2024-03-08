@@ -655,11 +655,11 @@ async function getTreasuryValues(priceData, treasuryAssets) {
   }
   
   async function pushTreasuryValuesToFirebase(treasuryValues, priceData) {
-    const previouslyRecordedDenoms = await fetchPreviouslyRecordedDenomsWithFlags();
+    const previouslyRecordedDenoms = await fetchPreviouslyRecordedDenoms();
     const currentDenoms = treasuryValues.map(item => Object.keys(item)[0]);
 
     const missingDenoms = previouslyRecordedDenoms.filter(denom => 
-        !currentDenoms.includes(denom.name) && !denom.finalRecordPushed);
+        !currentDenoms.includes(denom));
 
     for (const item of treasuryValues) {
         const assetName = Object.keys(item)[0];
@@ -673,7 +673,6 @@ async function getTreasuryValues(priceData, treasuryAssets) {
                 return currentData;
             } else {
                 // Handle the case where currentData is not an array
-                // For example, convert currentData to an array with its current value, then push
                 return [currentData].concat(item[assetName]);
             }
         }).catch((error) => {
@@ -682,7 +681,7 @@ async function getTreasuryValues(priceData, treasuryAssets) {
     }
 
     for (const denom of missingDenoms) {
-        const price = priceData[denom.name] || 0;
+        const price = priceData[denom] || 0;
         const finalRecord = {
             asset: 0,
             price: price,
@@ -690,8 +689,17 @@ async function getTreasuryValues(priceData, treasuryAssets) {
             value: 0
         };
 
-        const assetDataRef = firebaseOphirTreasury.child(denom.name);
+        const assetDataRef = firebaseOphirTreasury.child(denom);
         await assetDataRef.transaction(currentData => {
+            // Check if the last record indicates the asset has already been finalized
+            if (Array.isArray(currentData) && currentData.length > 0) {
+                const lastRecord = currentData[currentData.length - 1];
+                if (lastRecord.asset === 0 && lastRecord.value === 0) {
+                    // Skip updating since the last record indicates finalization
+                    return currentData;
+                }
+            }
+
             // Ensure currentData is an array before attempting to push
             if (currentData === null) {
                 return [finalRecord];
@@ -705,40 +713,22 @@ async function getTreasuryValues(priceData, treasuryAssets) {
         }).catch((error) => {
             console.error('Error updating data in Firebase for missing denom:', error);
         });
-
-        updateFinalRecordFlag(denom.name);
     }
 
     console.log("Treasury Data Saved");
 }
 
-
-async function fetchPreviouslyRecordedDenomsWithFlags() {
+async function fetchPreviouslyRecordedDenoms() {
     const snapshot = await firebaseOphirTreasury.once('value');
     const data = snapshot.val();
-    const denomsWithFlags = [];
+    const denoms = [];
 
-    // Assuming each child key is a denom name and each has a finalRecordPushed field
-    for (const [denomName, denomData] of Object.entries(data)) {
-        denomsWithFlags.push({
-            name: denomName,
-            finalRecordPushed: denomData.finalRecordPushed || false
-        });
+    // Assuming each child key is a denom name
+    for (const denomName in data) {
+        denoms.push(denomName);
     }
 
-    return denomsWithFlags;
-}
-
-async function updateFinalRecordFlag(denomName) {
-    // Reference the specific denom document
-    const denomRef = firebaseOphirTreasury.child(denomName);
-
-    // Update the finalRecordPushed flag for this denom
-    await denomRef.update({
-        finalRecordPushed: true
-    }).catch((error) => {
-        console.error(`Error updating finalRecordPushed flag for ${denomName}:`, error);
-    });
+    return denoms;
 }
 
 const fetchDataAndStore = async () => {
@@ -757,7 +747,7 @@ const fetchDataAndStore = async () => {
   };
 
   // Run fetchDataAndStore every 5 minutes
-//   setInterval(fetchDataAndStore, 5 * 60 * 1000);
+  setInterval(fetchDataAndStore, 5 * 60 * 1000);
 
 
 // Endpoint to get historical treasury data for a specific asset
@@ -850,6 +840,5 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
-
 
 module.exports = router;
