@@ -362,6 +362,8 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, mi
         location: "ampRoar Alliance Staked"
     };
 
+
+
     return combined;
 }
 
@@ -571,6 +573,7 @@ async function getTreasuryAssets(){
     const osmosisWWBondedAssets = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1mfqvxmv2gx62hglaegdv3useqjj44kxrl69nlt4tkysy9dx8g25sq40kez/smart/ewogICJib25kZWQiOiB7CiAgICAiYWRkcmVzcyI6ICJvc21vMXR6bDAzNjJsZHRzcmFkc2duNGdtdThwZDg3OTRxank2NmNsOHEyZmY0M2V2Y2xnd2Q3N3MycXZ3bDYiCiAgfQp9');
     const ampRoarAllianceStaked = await axios.get('https://phoenix-lcd.terra.dev/terra/alliances/delegations/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3');
     const ampRoarAllianceRewards = await axios.get('https://phoenix-lcd.erisprotocol.com/terra/alliances/rewards/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3/terravaloper1pet430t7ykswxuyhh56d4gk6rt7qgu9as6a5r0/factory%252Fterra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy%252FampROAR');
+    const osmosisAlliancewBTCRewards = await axios.get('https://celatone-api-prod.alleslabs.dev/rest/osmosis/osmosis-1/cosmwasm/wasm/v1/contract/osmo1ec7fqky6cq9xds6hq0e46f25ldnkkvjjkml7644y8la59ucqmtfsyyhh75/smart/ew0KICAiY2xhaW1hYmxlIjogew0KICAgICJhZGRyZXNzIjogIm9zbW8xdHpsMDM2MmxkdHNyYWRzZ240Z211OHBkODc5NHFqeTY2Y2w4cTJmZjQzZXZjbGd3ZDc3czJxdndsNiINCiAgfQ0KfQ==');
 
     parseOphirDaoTreasury(ophirTreasuryMigalooAssets.data, migalooHotWallet.data, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStaked.data, ampRoarAllianceRewards.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
@@ -838,6 +841,76 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
     }
 });
 
+router.get('/seeker-vesting', async (req, res) => {
+    const { contractAddress } = req.query;
+    if (!contractAddress) {
+        return res.status(400).send('Contract address is required');
+    }
+
+    try {
+        // Simulated database call to fetch vesting details for the given contract address
+        // This is a placeholder. Replace with actual database call or external API request as needed.
+        const vestingQuery = {
+            available_amount: {
+                address: contractAddress
+            }
+        };
+        let vestingStart;
+        let vestingEnd;
+        const formattedJsonString = JSON.stringify(vestingQuery, null, 1); // This adds spaces in the JSON string
+        const encodedQuery = Buffer.from(formattedJsonString).toString('base64');
+        console.log(formattedJsonString);
+        console.log(encodedQuery);
+        const vestingDetailsUrl = `https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/${encodedQuery}`;
+        console.log(vestingDetailsUrl);
+        let vestingDetails;
+        try {
+            const vestingAccountsUrl = 'https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==';
+            const vestingAccountsResponse = await axios.get(vestingAccountsUrl);
+            
+            if (vestingAccountsResponse.data && vestingAccountsResponse.data.data) {
+                const vestingAccountsData = vestingAccountsResponse.data.data.vesting_accounts;
+                const matchingAccount = vestingAccountsData.find(account => account.address === contractAddress);
+                console.log(matchingAccount);
+                if (matchingAccount) {
+                    const { start_point, end_point } = matchingAccount.info.schedules[0];
+                    vestingStart = start_point.time;
+                    vestingEnd = end_point.time;
+                }
+            }
+
+            const response = await axios.get(vestingDetailsUrl);
+            if (response.data && response.data.data) {
+                vestingDetails = {
+                    amount: response.data.data / 1000000,
+                    date: new Date().toISOString() // Assuming the current date as vesting date for simplicity
+                };
+            }
+
+            // Fetch additional vesting accounts data
+            
+        } catch (error) {
+            console.error('Error fetching vesting details:', error);
+            vestingDetails = null;
+        }
+
+        if (!vestingDetails) {
+            return res.status(404).send('Vesting details not found for the given contract address');
+        }
+
+        const response = {
+            address: contractAddress,
+            amountVesting: vestingDetails.amount,
+            vestingStart: vestingStart, // Assuming the date is stored in a readable format
+            vestingEnd: vestingEnd
+        };
+
+        res.json(response);
+    } catch (error) {
+        console.error('Error fetching vesting details:', error);
+        res.status(500).send('Internal server error');
+    }
+});
 
 
 
