@@ -519,7 +519,7 @@ function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, mig
  
 router.get('/stats', async (req, res) => {
     try {
-        if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 60 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
+        if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 90 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
             await fetchStatData();
         }
         let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
@@ -573,7 +573,7 @@ router.get('/prices', async (req, res) => {
 
 async function getTreasuryAssets(){
     const now = Date.now();
-    const oneMinute = 60000; // 60000 milliseconds in a minute
+    const oneMinute = 90000; // 60000 milliseconds in a minute
 
     // Check if cache is valid
     if (treasuryCache.lastFetch > now - oneMinute && treasuryCache.data) {
@@ -614,10 +614,10 @@ async function getTreasuryAssets(){
 async function getPrices(){
     let statData;
     const now = Date.now();
-    const oneMinute = 60000; // 60000 milliseconds in a minute
+    const cacheTimeLimit = 90000; // 60000 milliseconds in a minute
     // Check if cache is valid
-    if (now - cache.lastFetch > oneMinute || !cache.coinPrices) {
-        statData = await fetchStatData(); // Fetch new data if cache is older than 1 minute or coinPrices is not cached
+    if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
+        statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
     }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
