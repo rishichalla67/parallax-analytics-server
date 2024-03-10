@@ -519,7 +519,7 @@ function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, mig
  
 router.get('/stats', async (req, res) => {
     try {
-        if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 90 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
+        if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 250 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
             await fetchStatData();
         }
         let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
@@ -573,7 +573,7 @@ router.get('/prices', async (req, res) => {
 
 async function getTreasuryAssets(){
     const now = Date.now();
-    const oneMinute = 90000; // 60000 milliseconds in a minute
+    const oneMinute = 250000; // 60000 milliseconds in a minute
 
     // Check if cache is valid
     if (treasuryCache.lastFetch > now - oneMinute && treasuryCache.data) {
@@ -614,7 +614,7 @@ async function getTreasuryAssets(){
 async function getPrices(){
     let statData;
     const now = Date.now();
-    const cacheTimeLimit = 90000; // 60000 milliseconds in a minute
+    const cacheTimeLimit = 250000; // 60000 milliseconds in a minute
     // Check if cache is valid
     if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
@@ -976,9 +976,77 @@ router.get('/calculateRedemptionValue', async (req, res) => {
     }
 });
 
+router.get('/totalTreasuryValue', async (req, res) => {
+    try {
+        let totalTreasuryValue;
+        // Check if the value exists in the global treasuryCache
+        if (treasuryCache && treasuryCache.treasuryValueWithoutOphir) {
+            totalTreasuryValue = treasuryCache.treasuryValueWithoutOphir;
+        } else {
+            // If not, call getTreasuryAssets to fetch the data
+            const treasury = await getTreasuryAssets();
+            totalTreasuryValue = treasury.treasuryValueWithoutOphir;
+        }
 
+        // Send the totalTreasuryValue as a response
+        res.json({ totalTreasuryValue });
+    } catch (error) {
+        console.error('Error fetching total treasury value:', error);
+        res.status(500).send('Internal server error');
+    }
+});
 
-// Run fetchDataAndStore every 5 minutes
-setInterval(fetchDataAndStore, 5 * 60 * 1000);
+router.get('/cleanChartData', async (req, res) => {
+    try {
+        const snapshot = await firebaseOphirTreasury.once('value');
+        const data = snapshot.val();
+
+        if (!data) {
+            return res.status(404).send('No chart data found');
+        }
+
+        // Object to log assets with price: 0 and their indexes
+        const zeroPriceLog = {};
+
+        // Iterate through each asset in the treasury data
+        for (const assetName in data) {
+            const assetData = data[assetName];
+            const originalLength = assetData.length;
+
+            // Filter out data points with price: 0 and log them
+            const cleanedData = assetData.filter((item, index) => {
+                const hasZeroPrice = item.price === 0;
+                if (hasZeroPrice) {
+                    zeroPriceLog[assetName] = zeroPriceLog[assetName] || [];
+                    zeroPriceLog[assetName].push(index);
+                }
+                return !hasZeroPrice;
+            });
+
+            // Update Firebase with the cleaned data only if any data points were removed
+            if (cleanedData.length < originalLength) {
+                firebaseOphirTreasury.child(assetName).set(cleanedData)
+                .then(() => {
+                    console.log(`${assetName} data saved successfully.`);
+                })
+                .catch((error) => {
+                    console.error(`Error saving ${assetName} data:`, error);
+                });
+            }
+        }
+
+        // Log assets with price: 0 and their indexes
+        console.log("Assets with price: 0 and their indexes:", zeroPriceLog);
+
+        res.send('Chart data cleaned successfully');
+    } catch (error) {
+        console.error('Error cleaning chart data:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// Run fetchDataAndStore every 10 minutes
+setInterval(fetchDataAndStore, 10 * 60 * 1000);
+
 
 module.exports = router;
