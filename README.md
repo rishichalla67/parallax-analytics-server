@@ -11,6 +11,18 @@ Below is a summary of the API endpoints defined in the ophir.js file, along with
 - Method: GET
 - Purpose: Provides the latest prices for various assets including Ophir, Whale, bWhale, ampWhale, wBTC, wBTCaxl, ampWHALEt, Luna, Ash, OphirWhaleLp, Kuji, WhalewBtcLp, and Sail. It calculates LP prices for certain pairs and fetches prices from external APIs.
 External API Calls
+GET /treasury/chartData
+Fetches all treasury data in a chart-friendly format.
+GET /treasury/totalValueChartData
+Fetches a summary of daily treasury values over time.
+GET /seeker-vesting
+Retrieves vesting details for a given contract address.
+GET /calculateRedemptionValue
+Calculates the redemption value for a specified amount of Ophir.
+GET /totalTreasuryValue
+Returns the total value of the Ophir DAO treasury.
+GET /cleanChartData
+Cleans the chart data by removing data points with a price of 0.
 
 The file also makes several external API calls to fetch data required for the endpoints above:
 
@@ -26,3 +38,4 @@ The file also makes several external API calls to fetch data required for the en
 - Migaloo Hot Wallet: https://migaloo.explorer.interbloc.org/account/migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3
 - Alliance Staking Assets and Rewards: Various endpoints from https://phoenix-lcd.terra.dev/ and https://ww-migaloo-rest.polkachu.com/
 - Staked Sail Amount: https://indexer.daodao.zone/osmosis-1/contract/osmo14gz8xpzm5sj9acxfmgzzqh0strtuyhce08zm7pmqlkq6n4g5g6wq0924n8/daoVotingTokenSt
+
