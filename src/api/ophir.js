@@ -928,6 +928,54 @@ router.get('/seeker-vesting', async (req, res) => {
     }
 });
 
+router.get('/calculateRedemptionValue', async (req, res) => {
+    const { amount } = req.query; // The amount to calculate the redemption value for
+
+    try {
+        // Assuming getStats, getTreasury, and getPrice are existing functions that fetch the required data
+        // const stats = await fetchStatData();
+        const treasury = await getTreasuryAssets();
+        const price = await getPrices();
+
+        // console.log(treasury)
+        const redemptionPrice = Number(treasury.ophirRedemptionPrice); // Ensuring redemptionPrice is a number
+        // console.log(redemptionPrice)
+        const totalValue = Number(amount) * redemptionPrice; // Ensuring both amount and redemptionPrice are numbers
+        const treasuryAssetCount = Object.keys(treasury).reduce((count, key) => {
+            if (key !== 'ophir' && treasury[key] != null) {
+                return count + 1;
+            }
+            return count;
+        }, 0);
+        const treasuryValueWithoutOphir = parseFloat(treasury['treasuryValueWithoutOphir'].replace(/,/g, ''));
+        const assetPercentages = Object.keys(treasury).reduce((acc, key) => {
+            if (key === 'ophir' || key === 'treasuryValueWithoutOphir' || !treasury[key].balance || !price[key]) return acc; // Skip if key is 'ophir', 'treasuryValueWithoutOphir', balance or price is null
+
+            const assetValue = Number(treasury[key].balance) * price[key]; // Ensuring both balance and price are numbers
+            const assetPercentage = assetValue / treasuryValueWithoutOphir;
+            acc[key] = assetPercentage; // Storing the percentage
+
+            return acc;
+        }, {});
+        // console.log(assetPercentages)
+        const adjustedValues = Object.keys(assetPercentages).reduce((acc, key) => {
+            acc[key] = totalValue * assetPercentages[key];
+            return acc;
+        }, {});
+        // console.log(adjustedValues);
+        const finalValues = Object.keys(adjustedValues).reduce((acc, key) => {
+            acc[key] = adjustedValues[key] / price[key];
+            return acc;
+        }, {});
+        console.log(finalValues);
+
+        res.json({...finalValues, redemptionPricePerOPHIR: redemptionPrice, totalRedemptionValue: totalValue, calculatedAt: new Date().toISOString()});
+    } catch (error) {
+        console.error('Error calculating redemption value:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
 
 
 // Run fetchDataAndStore every 5 minutes
