@@ -980,12 +980,12 @@ router.get('/totalTreasuryValue', async (req, res) => {
     try {
         let totalTreasuryValue;
         // Check if the value exists in the global treasuryCache
-        if (treasuryCache && treasuryCache.treasuryValueWithoutOphir) {
-            totalTreasuryValue = treasuryCache.treasuryValueWithoutOphir;
+        if (treasuryCache && treasuryCache.totalTreasuryValue) {
+            totalTreasuryValue = treasuryCache.totalTreasuryValue;
         } else {
             // If not, call getTreasuryAssets to fetch the data
             const treasury = await getTreasuryAssets();
-            totalTreasuryValue = treasury.treasuryValueWithoutOphir;
+            totalTreasuryValue = treasury.totalTreasuryValue;
         }
 
         // Send the totalTreasuryValue as a response
