@@ -768,44 +768,90 @@ const fetchDataAndStore = async () => {
     }
   };
 
+  let assetDataCache = {};
 
 // Endpoint to get historical treasury data for a specific asset
 router.get('/treasury/chartData/:assetName', async (req, res) => {
-  const { assetName } = req.params;
-  const assetDataRef = firebaseOphirTreasury.child(assetName);
-
-  try {
-    const snapshot = await assetDataRef.once('value');
-    let data = snapshot.val();
-
-    if (data && data.length > 0) { // Check if data exists and is not empty after filtering
-      res.json(data);
-    } else {
-      res.status(404).send('Asset data not found or no data in the specified date range');
+    const { assetName } = req.params;
+    const now = Date.now();
+    const fifteenMinutes = 15 * 60 * 1000; // 15 minutes in milliseconds
+  
+    // Check if the asset data is cached and still valid
+    if (assetDataCache[assetName] && (now - assetDataCache[assetName].timestamp < fifteenMinutes)) {
+      return res.json(assetDataCache[assetName].data);
     }
-  } catch (error) {
-    console.error('Error fetching treasury data:', error);
-    res.status(500).send('Internal server error');
-  }
-});
+  
+    const assetDataRef = firebaseOphirTreasury.child(assetName);
+  
+    try {
+      const snapshot = await assetDataRef.once('value');
+      let data = snapshot.val();
+  
+      if (data && data.length > 0) { // Check if data exists and is not empty
+        // Cache the data with a timestamp
+        assetDataCache[assetName] = {
+          timestamp: now,
+          data: data
+        };
+        res.json(data);
+      } else {
+        res.status(404).send('Asset data not found or no data in the specified date range');
+      }
+    } catch (error) {
+      console.error('Error fetching treasury data:', error);
+      res.status(500).send('Internal server error');
+    }
+  });
+
+let treasuryChartDataCache = {
+    lastFetch: 0,
+    data: null
+};
 
 // Endpoint to get all treasury data
 router.get('/treasury/chartData', async (req, res) => {
-  try {
-    const snapshot = await firebaseOphirTreasury.once('value');
-    const data = snapshot.val();
-    if (data) {
-      res.json(data);
-    } else {
-      res.status(404).send('No treasury data found');
+    const now = Date.now();
+    const fifteenMinutes = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+    // Check if cache is valid
+    if (now - treasuryChartDataCache.lastFetch < fifteenMinutes && treasuryChartDataCache.data) {
+        return res.json(treasuryChartDataCache.data);
     }
-  } catch (error) {
-    console.error('Error fetching all treasury data:', error);
-    res.status(500).send('Internal server error');
-  }
+
+    try {
+        const snapshot = await firebaseOphirTreasury.once('value');
+        const data = snapshot.val();
+        if (data) {
+            // Update cache with new data and timestamp
+            treasuryChartDataCache = {
+                data: data,
+                lastFetch: now
+            };
+            res.json(data);
+        } else {
+            res.status(404).send('No treasury data found');
+        }
+    } catch (error) {
+        console.error('Error fetching all treasury data:', error);
+        res.status(500).send('Internal server error');
+    }
 });
 
+let totalValueChartDataCache = {
+    lastFetch: 0,
+    data: null
+};
+
 router.get('/treasury/totalValueChartData', async (req, res) => {
+    const now = Date.now();
+    const twelveHoursInMilliseconds = 12 * 60 * 60 * 1000;
+
+    // Check if the cache is valid
+    if (now - totalValueChartDataCache.lastFetch < twelveHoursInMilliseconds && totalValueChartDataCache.data) {
+        // Cache is valid, return the cached data
+        return res.json(totalValueChartDataCache.data);
+    }
+
     try {
         const snapshot = await firebaseOphirTreasury.once('value');
         const data = snapshot.val();
@@ -834,14 +880,12 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
                         // Skip this asset since it's already been counted for the day
                         return;
                     }
-                    // console.log(`Adding data for ${date}:`, item);
                     if (!acc[date]) {
                         acc[date] = { totalValue: 0 };
                     }
                     acc[date].totalValue += item.value;
                     // Mark this asset as added for the day
                     addedAssetsForDay[date].push(assetName);
-                    // console.log(`Updated total value for ${date}: ${acc[date].totalValue}`);
                 }
             });
             return acc;
@@ -852,6 +896,12 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
             date: date,
             totalValue: dailySummaries[date].totalValue
         }));
+
+        // Update the cache
+        totalValueChartDataCache = {
+            lastFetch: now,
+            data: summariesArray
+        };
 
         res.json(summariesArray);
     } catch (error) {
@@ -867,8 +917,6 @@ router.get('/seeker-vesting', async (req, res) => {
     }
 
     try {
-        // Simulated database call to fetch vesting details for the given contract address
-        // This is a placeholder. Replace with actual database call or external API request as needed.
         const vestingQuery = {
             available_amount: {
                 address: contractAddress
