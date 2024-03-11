@@ -1045,6 +1045,21 @@ router.get('/cleanChartData', async (req, res) => {
     }
 });
 
+router.get('/denoms', async (req, res) => {
+    try {
+        const invertedMappings = Object.keys(tokenMappings).reduce((acc, key) => {
+            const symbol = tokenMappings[key].symbol;
+            acc[symbol] = key;
+            return acc;
+        }, {});
+        res.status(200).json(invertedMappings);
+    } catch (error) {
+        console.error('Error fetching denoms with symbols:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
+
 router.get('/', (req, res) => {
     const routes = [];
     router.stack.forEach((middleware) => {
