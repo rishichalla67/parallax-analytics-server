@@ -1071,8 +1071,8 @@ router.get('/', (req, res) => {
 });
 
 
-// Run fetchDataAndStore every 10 minutes
-setInterval(fetchDataAndStore, 10 * 60 * 1000);
+// Run fetchDataAndStore every 15 minutes
+setInterval(fetchDataAndStore, 15 * 60 * 1000);
 
 
 module.exports = router;
