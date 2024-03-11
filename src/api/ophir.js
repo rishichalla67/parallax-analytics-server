@@ -1045,6 +1045,17 @@ router.get('/cleanChartData', async (req, res) => {
     }
 });
 
+router.get('/', (req, res) => {
+    const routes = [];
+    router.stack.forEach((middleware) => {
+        if (middleware.route) { // if it's a real route
+            routes.push(middleware.route.path);
+        }
+    });
+    res.status(200).json({ availableEndpoints: routes });
+});
+
+
 // Run fetchDataAndStore every 10 minutes
 setInterval(fetchDataAndStore, 10 * 60 * 1000);
 
