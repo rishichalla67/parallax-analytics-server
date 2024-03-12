@@ -17,7 +17,25 @@ const cache = {
     ophirStakedSupplyRaw: null
 };
 var serviceAccount = require("../../resources/firebase/firebase-admin.json");
-const priceAssetList = ['wBTC', 'luna', 'whale', 'wBTC.axl'];
+const symbolDenomMap = {
+    "chihuahua-token": "huahua",
+    "comdex": "cmdx",
+    "cosmos": "atom",
+    "injective-protocol": "inj",
+    "juno-network": "juno",
+    "levana-protocol": "lvn",
+    "lion-dao": "roar",
+    "osmosis": "osmo",
+    "sei-network": "sei",
+    "shade-protocol": "shd",
+    "terra-luna": "lunc",
+    "terra-luna-2": "luna",
+    "tether": "usdt",
+    "usd-coin": "usdc",
+    "white-whale": "whale",
+    "wrapped-bitcoin": "wBTC"
+}
+const priceAssetList = ['wBTC.axl'];
 let treasuryCache = {
     lastFetch: 0, // Timestamp of the last fetch
     treasuryValues: null // Cached data
@@ -140,22 +158,24 @@ async function fetchCoinPrices(){
       }
     }
 
-    const roarPriceResponse = await axios.post('https://api.livecoinwatch.com/coins/single', {
-        currency: "USD",
-        code: "____ROAR",
-        meta: false
-    }, {
-        headers: {
-            'X-Api-Key': api_key,
-            'Access-Control-Allow-Origin': '*'
-        }
-    });
-    const roarPrice = roarPriceResponse.data.rate;
-    prices['ampRoar'] = roarPrice*AMPROAR_ERIS_CONSTANT;
+    // Fetch additional price data
+    const priceDataResponse = await axios.get("https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/prices");
+    const priceData = priceDataResponse.data.data;
 
-    //custom logic for '.' in asset name
+    // Map the fetched price data to the prices object
+    for (const [key, value] of Object.entries(priceData)) {
+        // Use the value from symbolDenomMap if it exists, otherwise use the original key
+        let formattedKey = symbolDenomMap[key] || key;
+        prices[formattedKey] = value.usd;
+    }
+
+    prices['ampRoar'] = prices["roar"]*AMPROAR_ERIS_CONSTANT;
+
+    // Custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
+
+    console.log(prices)
 
     return prices;
 }
@@ -445,6 +465,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     if (!cache.coinPrices) {
         statData = await fetchStatData();
     }
+
+    
+
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
@@ -467,10 +490,22 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         kuji: kujiPrice.data.exchange_rate,
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
+        shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
+        lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
+        juno: statData?.coinPrices["juno"] || cache?.coinPrices['juno'],
+        inj: statData?.coinPrices["inj"] || cache?.coinPrices['inj'],
+        osmo: statData?.coinPrices["osmo"] || cache?.coinPrices['osmo'],
+        usdt: statData?.coinPrices["usdt"] || cache?.coinPrices['usdt'],
+        sei: statData?.coinPrices["sei"] || cache?.coinPrices['sei'],
+        atom: statData?.coinPrices["atom"] || cache?.coinPrices['atom'],
+        cmdx: statData?.coinPrices["cmdx"] || cache?.coinPrices['cmdx'],
+        huahua: statData?.coinPrices["huahua"] || cache?.coinPrices['huahua'],
+        lunc: statData?.coinPrices["lunc"] || cache?.coinPrices['lunc'],
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
+        roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
         ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
-        ampUSDC: 1*MUSDC_ERIS_CONSTANT,
-        axlUSDC: 1
+        ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
+        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc']
     }
 
     for (let key in balances) {
@@ -488,7 +523,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
         "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2),
-        "ophirRedemptionPrice": (totalValueWithoutOphir/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
+        "ophirRedemptionPrice": (totalValue/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
     };
 }
 
@@ -641,10 +676,22 @@ async function getPrices(){
         kuji: kujiPrice.data.exchange_rate,
         ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
+        shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
+        lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
+        juno: statData?.coinPrices["juno"] || cache?.coinPrices['juno'],
+        inj: statData?.coinPrices["inj"] || cache?.coinPrices['inj'],
+        osmo: statData?.coinPrices["osmo"] || cache?.coinPrices['osmo'],
+        usdt: statData?.coinPrices["usdt"] || cache?.coinPrices['usdt'],
+        sei: statData?.coinPrices["sei"] || cache?.coinPrices['sei'],
+        atom: statData?.coinPrices["atom"] || cache?.coinPrices['atom'],
+        cmdx: statData?.coinPrices["cmdx"] || cache?.coinPrices['cmdx'],
+        huahua: statData?.coinPrices["huahua"] || cache?.coinPrices['huahua'],
+        lunc: statData?.coinPrices["lunc"] || cache?.coinPrices['lunc'],
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
+        roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
         ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
-        ampUSDC: 1*MUSDC_ERIS_CONSTANT,
-        axlUSDC: 1.00
+        ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
+        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc']
     }
     return prices;
 }
