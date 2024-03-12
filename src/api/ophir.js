@@ -7,6 +7,8 @@ const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpu
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
 const AMPROAR_ERIS_CONSTANT = 1.0199;
 const MUSDC_ERIS_CONSTANT = 1.0208;
+const BLUNA_CONSTANT = 1.183177;
+const AMPLUNA_ERIS_CONSTANT = 1.3351;
 
 const cache = {
     lastFetch: 0,
@@ -64,6 +66,8 @@ const tokenMappings = {
     'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6},
     'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'ampUSDC', decimals: 6},
     'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'axlUSDC', decimals: 6},
+    'ibc/40C29143BF4153B365089E40E437B7AA819672646C45BB0A5F1E10915A0B6708': {symbol: 'bLuna', decimals: 6},
+    'ibc/05238E98A143496C8AF2B6067BABC84503909ECE9E45FBCBAC2CBA5C889FD82A': {symbol: 'ampLuna', decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -504,7 +508,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
         ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc']
+        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc'],
+        bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
+        ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
 
     for (let key in balances) {
@@ -675,8 +681,8 @@ async function getPrices(){
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: Number(kujiPrice.data.exchange_rate),
-        ampKuji: Number(ampKujiPrice.data.exchange_rate),
+        kuji: kujiPrice.data.exchange_rate,
+        ampKuji: ampKujiPrice.data.exchange_rate,
         whalewBtcLp: whalewBtcLpPrice,
         shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
         lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
@@ -693,7 +699,9 @@ async function getPrices(){
         roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
         ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc']
+        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc'],
+        bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
+        ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
     return prices;
 }
