@@ -525,7 +525,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
         "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2),
-        "ophirRedemptionPrice": ((foundersRoundValue+seekersRoundValue+totalValueWithoutOphir)/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
+        "ophirRedemptionPrice": ((totalValueWithoutOphir)/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
     };
 }
 
