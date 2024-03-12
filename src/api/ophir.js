@@ -7,7 +7,6 @@ const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpu
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
 const AMPROAR_ERIS_CONSTANT = 1.0199;
 const MUSDC_ERIS_CONSTANT = 1.0208;
-const api_key = "cc089c26-c0ec-43c0-8bbe-093b47d1d338";
 
 const cache = {
     lastFetch: 0,
