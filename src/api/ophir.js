@@ -519,10 +519,13 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
     ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
 
+    const foundersRoundValue = 0.001*250000000;
+    const seekersRoundValue = 0.0025*150000000;
+
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
         "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2),
-        "ophirRedemptionPrice": (totalValueWithoutOphir/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
+        "ophirRedemptionPrice": ((foundersRoundValue+seekersRoundValue+totalValueWithoutOphir)/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
     };
 }
 
