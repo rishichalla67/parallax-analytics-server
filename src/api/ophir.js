@@ -9,6 +9,7 @@ const AMPROAR_ERIS_CONSTANT = 1.0207;
 const MUSDC_ERIS_CONSTANT = 1.0219;
 const BLUNA_CONSTANT = 1.183177;
 const AMPLUNA_ERIS_CONSTANT = 1.3351;
+const UNSOLD_OPHIR_FUZION_BONDS = 47220247.332;
 
 const cache = {
     lastFetch: 0,
@@ -177,8 +178,6 @@ async function fetchCoinPrices(){
     // Custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
-
-    console.log(prices)
 
     return prices;
 }
@@ -525,14 +524,19 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
     ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
 
-    const foundersRoundValue = 0.001*250000000;
-    const seekersRoundValue = 0.0025*150000000;
+    const ophirMigalooVaultAmount = (balances['ophir'] && (balances['ophir']?.location === "Migaloo Vault")) ? balances['ophir'].balance : "Migaloo Vault" in balances['ophir']?.composition ? balances['ophir']?.composition['Migaloo Vault'] : 0;
 
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
         "treasuryValueWithoutOphir": formatNumber(totalValueWithoutOphir, 2),
-        "ophirRedemptionPrice": ((totalValueWithoutOphir)/(cache.ophirCirculatingSupply.data+ophirStakedSupply))
+        "ophirRedemptionPrice": calculateOphirRedeptionPrice(totalValueWithoutOphir, ophirStakedSupply, ophirMigalooVaultAmount)
     };
+}
+
+function calculateOphirRedeptionPrice(totalValueWithoutOphir, ophirStakedSupply, ophirMigalooVaultAmount){
+    const adjTrueCirculatingSupply = cache.ophirCirculatingSupply.data+ophirStakedSupply-UNSOLD_OPHIR_FUZION_BONDS-ophirMigalooVaultAmount;
+    const adjTreasuryValue = totalValueWithoutOphir + ((1000000000 - adjTrueCirculatingSupply)*0.0025)  // (1,000,000,000 - (circ supply + staked ophir)) * 0.0025  done for calculating value added to treasury of all ophir sold at 0.0025 price
+    return (adjTreasuryValue/adjTrueCirculatingSupply);
 }
 
 function compactAlliance(assetData, rewardsData){
