@@ -6,10 +6,10 @@ const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
 const AMPROAR_ERIS_CONSTANT = 1.0207;
-const MUSDC_ERIS_CONSTANT = 1.0219;
-const BLUNA_CONSTANT = 1.183177;
-const AMPLUNA_ERIS_CONSTANT = 1.3351;
-const UNSOLD_OPHIR_FUZION_BONDS = 47220247.332;
+const MUSDC_ERIS_CONSTANT = 1.0224;
+const BLUNA_CONSTANT = 1/0.844848;
+const AMPLUNA_ERIS_CONSTANT = 1.3356;
+const UNSOLD_OPHIR_FUZION_BONDS = 47210991.1836;
 
 const cache = {
     lastFetch: 0,
@@ -88,15 +88,21 @@ const router = express.Router();
 // redisClient.connect();
 
 function filterPoolsWithPrice(data) {
+    // Check if data is an array, return an empty object if not
+    if (!Array.isArray(data)) {
+        console.error('Expected an array but received:', data);
+        return {};
+    }
+
     const filteredData = data
-        .filter(item => parseFloat(item.Price) > 0)
+        .filter(item => parseFloat(item.ratio) > 0)
         .reduce((acc, item) => {
-            acc[item.pool_id] = item.Price;
+            acc[item.pool_id] = parseFloat(item.ratio);
             return acc;
         }, {});
 
     return filteredData;
-} 
+}
 
 function getOphirContractBalance(data){
     const ophirTokenInfo = tokenMappings[OPHIR];
@@ -137,7 +143,8 @@ async function fetchStatData() {
         { data: OPHIR_TOTAL_SUPPLY } // Assuming OPHIR_TOTAL_SUPPLY is the desired fallback structure
     );
 
-    cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
+    // cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
+    cache.whiteWhalePoolRawData = await axios.get('https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/pools/migaloo');
     cache.ophirCirculatingSupply = ophirCirculatingSupplyResponse;
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
     cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
@@ -471,7 +478,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     
 
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
-    const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
+    // console.log(statData?.whiteWhalePoolRawData.data.data);
+    const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
+    console.log(whiteWhalePoolFilteredData);
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
@@ -571,7 +580,7 @@ router.get('/stats', async (req, res) => {
         }
         let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
         try {
-            whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data);
+            whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data.data);
         } catch (error) {
             console.error('Error filtering White Whale Pool data:', error);
             whiteWhalePoolFilteredData = {}; // Default to empty object to prevent further errors
@@ -667,7 +676,7 @@ async function getPrices(){
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
     }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
-    const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data || cache.whiteWhalePoolRawData.data) || 0;
+    const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
