@@ -534,7 +534,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
     ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
 
-    const ophirMigalooVaultAmount = (balances['ophir'] && (balances['ophir']?.location === "Migaloo Vault")) ? balances['ophir'].balance : "Migaloo Vault" in balances['ophir']?.composition ? balances['ophir']?.composition['Migaloo Vault'] : 0;
+    // const ophirMigalooVaultAmount = (balances['ophir'] && (balances['ophir']?.location === "Migaloo Vault")) ? balances['ophir'].balance : "Migaloo Vault" in balances['ophir']?.composition ? balances['ophir']?.composition['Migaloo Vault'] : 0;
 
     return {
         "totalTreasuryValue": formatNumber(totalValue, 2),
@@ -545,6 +545,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
 
 function calculateOphirRedeptionPrice(totalValueWithoutOphir, ophirStakedSupply){
     const adjTrueCirculatingSupply = cache.ophirCirculatingSupply.data+ophirStakedSupply;
+    console.log(cache.ophirCirculatingSupply.data, ophirStakedSupply, adjTrueCirculatingSupply)
     const adjTreasuryValue = totalValueWithoutOphir + ((1000000000 - adjTrueCirculatingSupply)*0.0025)  // (1,000,000,000 - (circ supply + staked ophir)) * 0.0025  done for calculating value added to treasury of all ophir sold at 0.0025 price
     return (adjTreasuryValue/adjTrueCirculatingSupply);
 }
