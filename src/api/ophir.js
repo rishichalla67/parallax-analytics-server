@@ -607,7 +607,7 @@ router.get('/stats', async (req, res) => {
         }
         res.json({
             price: ophirPrice,
-            marketCap: (cache.ophirCirculatingSupply.data + ophirStakedSupply) * ophirPrice,
+            marketCap: (cache.ophirCirculatingSupply.data) * ophirPrice,
             fdv: ophirPrice * OPHIR_TOTAL_SUPPLY,
             circulatingSupply: cache.ophirCirculatingSupply.data,
             stakedSupply: ophirStakedSupply,
