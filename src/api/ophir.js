@@ -481,7 +481,6 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     // console.log(statData?.whiteWhalePoolRawData.data.data);
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
-    console.log(whiteWhalePoolFilteredData);
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
@@ -883,10 +882,10 @@ let treasuryChartDataCache = {
 // Endpoint to get all treasury data
 router.get('/treasury/chartData', async (req, res) => {
     const now = Date.now();
-    const fifteenMinutes = 15 * 60 * 1000; // 15 minutes in milliseconds
+    const cacheTimeLimit = 30 * 60 * 1000; // 30 minutes in milliseconds
 
     // Check if cache is valid
-    if (now - treasuryChartDataCache.lastFetch < fifteenMinutes && treasuryChartDataCache.data) {
+    if (now - treasuryChartDataCache.lastFetch < cacheTimeLimit && treasuryChartDataCache.data) {
         return res.json(treasuryChartDataCache.data);
     }
 
