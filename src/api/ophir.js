@@ -1034,6 +1034,37 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
     }
 });
 
+let vestingAccountsCache = {
+    lastFetch: 0,
+    data: null
+};
+
+const fetchVestingAccounts = async () => {
+    const now = Date.now();
+    const cacheDuration = 15 * 60 * 1000; // 15 minutes in milliseconds
+
+    // Use cached data if it's still valid
+    if (now - vestingAccountsCache.lastFetch < cacheDuration && vestingAccountsCache.data) {
+        return vestingAccountsCache.data;
+    }
+
+    try {
+        const vestingAccountsUrl = 'https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==';
+        const response = await axios.get(vestingAccountsUrl);
+        if (response.data && response.data.data) {
+            // Update cache
+            vestingAccountsCache = {
+                lastFetch: now,
+                data: response.data.data.vesting_accounts
+            };
+            return vestingAccountsCache.data;
+        }
+    } catch (error) {
+        console.error('Error fetching vesting accounts:', error);
+        throw new Error('Failed to fetch vesting accounts');
+    }
+};
+
 router.get('/seeker-vesting', async (req, res) => {
     const { contractAddress } = req.query;
     if (!contractAddress) {
@@ -1052,14 +1083,12 @@ router.get('/seeker-vesting', async (req, res) => {
         const encodedQuery = Buffer.from(formattedJsonString).toString('base64');
         const vestingDetailsUrl = `https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/${encodedQuery}`;
         let vestingDetails;
+        let matchingAccount;
         try {
-            const vestingAccountsUrl = 'https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==';
-            const vestingAccountsResponse = await axios.get(vestingAccountsUrl);
+            const vestingAccountsData = await fetchVestingAccounts();
             
-            if (vestingAccountsResponse.data && vestingAccountsResponse.data.data) {
-                const vestingAccountsData = vestingAccountsResponse.data.data.vesting_accounts;
-                const matchingAccount = vestingAccountsData.find(account => account.address === contractAddress);
-                console.log(matchingAccount);
+            if (vestingAccountsData) {
+                matchingAccount = vestingAccountsData.find(account => account.address === contractAddress);
                 if (matchingAccount) {
                     const { start_point, end_point } = matchingAccount.info.schedules[0];
                     vestingStart = start_point.time;
@@ -1090,12 +1119,48 @@ router.get('/seeker-vesting', async (req, res) => {
             address: contractAddress,
             amountVesting: vestingDetails.amount,
             vestingStart: vestingStart, // Assuming the date is stored in a readable format
-            vestingEnd: vestingEnd
+            vestingEnd: vestingEnd,
+            amountClaimed: matchingAccount.info.released_amount / 1000000,
         };
 
         res.json(response);
     } catch (error) {
         console.error('Error fetching vesting details:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
+router.get('/getAllSeekers', async (req, res) => {
+    try {
+        const vestingAccountsData = await fetchVestingAccounts();
+        if (!vestingAccountsData) {
+            return res.status(404).send('Vesting accounts data not found');
+        }
+
+        const seekers = vestingAccountsData.map(account => {
+            const { address, info } = account;
+            const { start_point, end_point } = info.schedules[0]; // Assuming there's at least one schedule
+            return {
+                address,
+                amount: info.schedules[0].end_point.amount / 1000000,
+                vestingStart: new Date(start_point.time * 1000).toLocaleString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: true
+                }),
+                vestingEnd: new Date(end_point.time * 1000).toLocaleString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: true
+                }),
+                claimable: new Date(end_point.time * 1000) < new Date(),
+                amountClaimed: info.released_amount / 1000000,
+            };
+        });
+
+        res.json(seekers);
+    } catch (error) {
+        console.error('Error fetching all seekers:', error);
         res.status(500).send('Internal server error');
     }
 });
