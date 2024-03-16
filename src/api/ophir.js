@@ -225,14 +225,28 @@ function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
 }
 
 function getSailPriceFromLp(data, whalePrice){
+    // Check if data or data.data is undefined or null, or if whalePrice is 0
+    if (!data || !data.data || whalePrice === 0) return 0;
+
+    // Check if data.data.assets is present and is an array
+    if (!Array.isArray(data.data.assets)) {
+        console.error('Expected data.data.assets to be an array, received:', data.data.assets);
+        return 0;
+    }
+
     const assets = data.data.assets.reduce((acc, asset) => {
-        acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
+        const symbol = tokenMappings[asset.info.native_token.denom].symbol;
+        const amount = Number(asset.amount);
+        const decimals = getDecimalForSymbol(symbol);
+        acc[symbol] = amount / Math.pow(10, decimals);
         return acc;
     }, {});
 
-    let whaleValue = assets['whale']*whalePrice;
-    let sailPrice = whaleValue/assets['sail'];
-    return sailPrice;
+    if (!assets['whale'] || !assets['sail']) return 0;
+
+    let whaleValue = assets['whale'] * whalePrice;
+    let sailPrice = whaleValue / assets['sail'];
+    return sailPrice || 0;
 }
 
 function swapKeysWithSymbols(balances) {
@@ -477,15 +491,34 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
 
     
-
+    let sailWhaleLpData = 0;
+    let ampKujiPrice = 0;
+    let kujiPrice = 0;
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     // console.log(statData?.whiteWhalePoolRawData.data.data);
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
-    const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
-    const ampKujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
-    const kujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
+    try {
+        const response = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
+        sailWhaleLpData = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching Sail Whale LP Data:', error);
+    }
+
+    try {
+        const response = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
+        ampKujiPrice = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching AMP Kuji Price:', error);
+    }
+
+    try {
+        const response = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
+        kujiPrice = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching Kuji Price:', error);
+    }
 
     let prices = {
         whale: whalePrice,
@@ -498,8 +531,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: kujiPrice.data.exchange_rate,
-        ampKuji: ampKujiPrice.data.exchange_rate,
+        kuji: kujiPrice?.exchange_rate || 0,
+        ampKuji: ampKujiPrice?.exchange_rate || 0,
         whalewBtcLp: whalewBtcLpPrice,
         shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
         lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
@@ -669,6 +702,9 @@ async function getTreasuryAssets(){
 }
 
 async function getPrices(){
+    let sailWhaleLpData = 0;
+    let ampKujiPrice = 0;
+    let kujiPrice = 0;
     let statData;
     const now = Date.now();
     const cacheTimeLimit = 250000; // 60000 milliseconds in a minute
@@ -676,13 +712,30 @@ async function getPrices(){
     if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
     }
-    const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
+    const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'] || 0;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
     const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
-    const sailWhaleLpData = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
-    const ampKujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
-    const kujiPrice = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
+    try {
+        const response = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
+        sailWhaleLpData = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching Sail Whale LP Data:', error);
+    }
+
+    try {
+        const response = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate');
+        ampKujiPrice = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching AMP Kuji Price:', error);
+    }
+
+    try {
+        const response = await axios.get('https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate');
+        kujiPrice = response.data || 0;
+    } catch (error) {
+        console.error('Error fetching Kuji Price:', error);
+    }
     
     let prices = {
         whale: whalePrice,
@@ -695,8 +748,8 @@ async function getPrices(){
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: kujiPrice.data.exchange_rate,
-        ampKuji: ampKujiPrice.data.exchange_rate,
+        kuji: kujiPrice?.exchange_rate || 0,
+        ampKuji: ampKujiPrice?.exchange_rate || 0,
         whalewBtcLp: whalewBtcLpPrice,
         shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
         lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
@@ -941,7 +994,7 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
                 const utcMinutes = timestamp.getUTCMinutes();
 
                 // Check if timestamp is between 12:00 PM UTC and 12:05 PM UTC
-                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 5) {
+                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 15) {
                     // Initialize the array for the date if it doesn't exist
                     if (!addedAssetsForDay[date]) {
                         addedAssetsForDay[date] = [];
