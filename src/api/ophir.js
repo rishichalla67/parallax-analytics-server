@@ -1153,10 +1153,12 @@ router.get('/getAllSeekers', async (req, res) => {
                     hour: '2-digit', minute: '2-digit', second: '2-digit',
                     hour12: true
                 }),
+                vestingEndTime: end_point.time * 1000, // Add raw timestamp for sorting
                 claimable: new Date(end_point.time * 1000) < new Date(),
                 amountClaimed: info.released_amount / 1000000,
             };
-        });
+        }).sort((a, b) => a.vestingEndTime - b.vestingEndTime) // Sort by vestingEndTime in ascending order
+          .map(({ vestingEndTime, ...rest }) => rest); // Remove the vestingEndTime from the final objects
 
         res.json(seekers);
     } catch (error) {
