@@ -225,16 +225,16 @@ function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
 }
 
 function getSailPriceFromLp(data, whalePrice){
-    // Check if data or data.data is undefined or null, or if whalePrice is 0
-    if (!data || !data.data || whalePrice === 0) return 0;
+    // Check if data or data is undefined or null, or if whalePrice is 0
+    if (!data || whalePrice === 0) return 0;
 
-    // Check if data.data.assets is present and is an array
-    if (!Array.isArray(data.data.assets)) {
-        console.error('Expected data.data.assets to be an array, received:', data.data.assets);
+    // Check if data.assets is present and is an array
+    if (!Array.isArray(data.assets)) {
+        console.error('Expected data.data.assets to be an array, received:', data.assets);
         return 0;
     }
 
-    const assets = data.data.assets.reduce((acc, asset) => {
+    const assets = data.assets.reduce((acc, asset) => {
         const symbol = tokenMappings[asset.info.native_token.denom].symbol;
         const amount = Number(asset.amount);
         const decimals = getDecimalForSymbol(symbol);
