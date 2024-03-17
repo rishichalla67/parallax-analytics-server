@@ -1034,17 +1034,64 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
     }
 });
 
+const VESTING_CACHE_DURATION = 15 * 60 * 1000;
 let vestingAccountsCache = {
     lastFetch: 0,
-    data: null
+    data: null,
+    totalOphirVesting: null
 };
+
+async function fetchAndProcessVestingAccounts() {
+    const now = Date.now();
+    // Check if the cache is still valid
+    if (now - vestingAccountsCache.lastFetch < VESTING_CACHE_DURATION && vestingAccountsCache.data) {
+        return vestingAccountsCache;
+    }
+
+    try {
+        const vestingAccountsData = await fetchVestingAccounts();
+        if (!vestingAccountsData) {
+            throw new Error('Vesting accounts data not found');
+        }
+
+        let totalOphirVesting = 0;
+
+        const seekers = vestingAccountsData.map(account => {
+            const { address, info } = account;
+            const { start_point, end_point } = info.schedules[0];
+            const amountVesting = info.schedules[0].end_point.amount / 1000000;
+
+            totalOphirVesting += amountVesting;
+
+            return {
+                address,
+                amount: amountVesting,
+                vestingStart: new Date(start_point.time * 1000).toUTCString(),
+                vestingEnd: new Date(end_point.time * 1000).toUTCString(),
+                claimable: new Date(end_point.time * 1000) < new Date(),
+                amountClaimed: info.released_amount / 1000000,
+            };
+        }).sort((a, b) => new Date(a.vestingEnd) - new Date(b.vestingEnd));
+
+        // Update the cache
+        vestingAccountsCache = {
+            lastFetch: now,
+            data: seekers,
+            totalOphirVesting: totalOphirVesting
+        };
+
+        return vestingAccountsCache;
+    } catch (error) {
+        console.error('Error in fetchAndProcessVestingAccounts:', error);
+        throw error; // Rethrow the error to handle it in the calling function
+    }
+}
 
 const fetchVestingAccounts = async () => {
     const now = Date.now();
-    const cacheDuration = 15 * 60 * 1000; // 15 minutes in milliseconds
 
     // Use cached data if it's still valid
-    if (now - vestingAccountsCache.lastFetch < cacheDuration && vestingAccountsCache.data) {
+    if (now - vestingAccountsCache.lastFetch < VESTING_CACHE_DURATION && vestingAccountsCache.data) {
         return vestingAccountsCache.data;
     }
 
@@ -1132,30 +1179,83 @@ router.get('/seeker-vesting', async (req, res) => {
 
 router.get('/getAllSeekers', async (req, res) => {
     try {
-        const vestingAccountsData = await fetchVestingAccounts();
-        if (!vestingAccountsData) {
-            return res.status(404).send('Vesting accounts data not found');
-        }
-
-        const seekers = vestingAccountsData.map(account => {
-            const { address, info } = account;
-            const { start_point, end_point } = info.schedules[0]; // Assuming there's at least one schedule
-            return {
-                address,
-                amount: info.schedules[0].end_point.amount / 1000000,
-                vestingStart: new Date(start_point.time * 1000).toUTCString(),
-                vestingEnd: new Date(end_point.time * 1000).toUTCString(),
-                vestingEndTime: end_point.time * 1000, // Add raw timestamp for sorting
-                claimable: new Date(end_point.time * 1000) < new Date(),
-                amountClaimed: info.released_amount / 1000000,
-            };
-        }).sort((a, b) => a.vestingEndTime - b.vestingEndTime) // Sort by vestingEndTime in ascending order
-          .map(({ vestingEndTime, ...rest }) => rest); // Remove the vestingEndTime from the final objects
-
-        res.json(seekers);
+        const { data: seekers, totalOphirVesting } = await fetchAndProcessVestingAccounts();
+        res.json({
+            seekers,
+            totalOphirVesting
+        });
     } catch (error) {
         console.error('Error fetching all seekers:', error);
         res.status(500).send('Internal server error');
+    }
+});
+
+async function fetchTransactionsForAccount(accountId, page = 1, transactions = []) {
+    const url = `https://migaloo.explorer.interbloc.org/transactions/account/${accountId}?per_page=15&page=${page}&order_by=height&order_direction=desc&exclude_failed=false`;
+    try {
+        const response = await axios.get(url);
+        const fetchedTransactions = response.data.transactions;
+        if (fetchedTransactions.length === 0) {
+            // No more transactions to fetch
+            return transactions;
+        }
+        // Filter transactions where the "to" address matches the accountId and denom matches the specified value
+        const filteredAndMappedTransactions = fetchedTransactions
+            .filter(tx => tx.tx.body.messages.some(message => 
+                message.toAddress === accountId && 
+                message.amount.some(amount => amount.denom === "ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A") &&
+                message.amount.some(amount => amount.amount > 1000000000)
+            ))
+            .map(tx => ({
+                tx: tx.tx.body, // Store the entire tx object
+                timestamp: tx.timestamp // Store the timestamp
+            }));
+        // Concatenate the filtered and mapped transactions with the existing ones
+        const allTransactions = transactions.concat(filteredAndMappedTransactions);
+        // Recursively fetch the next page
+        return fetchTransactionsForAccount(accountId, page + 1, allTransactions);
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        throw error; // Rethrow the error to handle it in the calling function
+    }
+}
+
+function sumTransactionAmounts(transactions) {
+    let totalAmount = 0;
+    transactions.forEach(transaction => {
+        if (transaction.tx.messages && transaction.tx.messages.length > 0) {
+            transaction.tx.messages.forEach(message => {
+                if (message.amount && message.amount.length > 0) {
+                    message.amount.forEach(amount => {
+                        totalAmount += parseInt(amount.amount, 10);
+                    });
+                }
+            });
+        }
+    });
+    console.log(totalAmount)
+    return 100000000-((totalAmount/1000000)/0.0025);
+}
+
+router.get('/getSeekerRoundDetails', async (req, res) => {
+    const accountId = 'migaloo14gu2xfk4m3x64nfkv9cvvjgmv2ymwhps7fwemk29x32k2qhdrmdsp9y2wu';
+    try {
+        const transactions = await fetchTransactionsForAccount(accountId);
+        const ophirLeftInSeekersRound = sumTransactionAmounts(transactions); // 
+        console.log(ophirLeftInSeekersRound);
+        if (vestingAccountsCache.totalOphirVesting === null) {
+            await fetchAndProcessVestingAccounts();
+        }
+        const ophirPendingVesting = 100000000 - (ophirLeftInSeekersRound + vestingAccountsCache.totalOphirVesting)
+        
+        res.json({
+            ophirPendingVesting,
+            ophirLeftInSeekersRound,
+            totalOphirVesting: vestingAccountsCache.totalOphirVesting
+        });
+    } catch (error) {
+        console.error('An error occurred:', error);
+        res.status(500).json({ error: 'An unexpected error occurred' });
     }
 });
 
