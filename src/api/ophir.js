@@ -1213,7 +1213,10 @@ async function fetchTransactionsForAccount(accountId, page = 1, transactions = [
                 message.amount.some(amount => amount.amount >= 1000000000)
             ))
             .map(tx => ({
-                tx: tx.tx.body, // Store the entire tx object
+                tx: {
+                    ...tx.tx.body, // Spread the existing tx.tx.body object
+                    txHash: tx.txhash // Assuming txHash is located at tx.txhash
+                },
                 timestamp: tx.timestamp // Store the timestamp
             }));
         // Concatenate the filtered and mapped transactions with the existing ones
