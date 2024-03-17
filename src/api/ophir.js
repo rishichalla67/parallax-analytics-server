@@ -1261,6 +1261,7 @@ router.get('/getSeekerRoundDetails', async (req, res) => {
         // console.log(JSON.stringify(transactions, null, 2))
         res.json({
             transactions,
+            transactionCount: transactions.length,
             ophirPendingVesting,
             ophirLeftInSeekersRound,
             totalOphirVesting: vestingAccountsCache.totalOphirVesting
