@@ -1056,22 +1056,28 @@ async function fetchAndProcessVestingAccounts() {
 
         let totalOphirVesting = 0;
 
-        const seekers = vestingAccountsData.map(account => {
+        const seekers = vestingAccountsData.reduce((acc, account) => {
             const { address, info } = account;
             const { start_point, end_point } = info.schedules[0];
             const amountVesting = info.schedules[0].end_point.amount / 1000000;
 
+            if (amountVesting < 400000) {
+                return acc; // Skip adding this account to the response if amountVesting is < 400000
+            }
+
             totalOphirVesting += amountVesting;
 
-            return {
+            acc.push({
                 address,
                 amount: amountVesting,
                 vestingStart: new Date(start_point.time * 1000).toUTCString(),
                 vestingEnd: new Date(end_point.time * 1000).toUTCString(),
                 claimable: new Date(end_point.time * 1000) < new Date(),
                 amountClaimed: info.released_amount / 1000000,
-            };
-        }).sort((a, b) => new Date(a.vestingEnd) - new Date(b.vestingEnd));
+            });
+
+            return acc;
+        }, []).sort((a, b) => new Date(a.vestingEnd) - new Date(b.vestingEnd));
 
         // Update the cache
         vestingAccountsCache = {
@@ -1204,7 +1210,7 @@ async function fetchTransactionsForAccount(accountId, page = 1, transactions = [
             .filter(tx => tx.tx.body.messages.some(message => 
                 message.toAddress === accountId && 
                 message.amount.some(amount => amount.denom === "ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A") &&
-                message.amount.some(amount => amount.amount > 1000000000)
+                message.amount.some(amount => amount.amount >= 1000000000)
             ))
             .map(tx => ({
                 tx: tx.tx.body, // Store the entire tx object
@@ -1246,9 +1252,15 @@ router.get('/getSeekerRoundDetails', async (req, res) => {
         if (vestingAccountsCache.totalOphirVesting === null) {
             await fetchAndProcessVestingAccounts();
         }
-        const ophirPendingVesting = 100000000 - (ophirLeftInSeekersRound + vestingAccountsCache.totalOphirVesting)
-        
+
+        const dollarAmount = 1.63
+        const manualRefundsInOphir = dollarAmount / 0.0025
+
+        let rawOphirPendingVesting = 100000000 - (ophirLeftInSeekersRound + vestingAccountsCache.totalOphirVesting) - manualRefundsInOphir;
+        const ophirPendingVesting = Math.round(rawOphirPendingVesting / 10) * 10;
+        // console.log(JSON.stringify(transactions, null, 2))
         res.json({
+            transactions,
             ophirPendingVesting,
             ophirLeftInSeekersRound,
             totalOphirVesting: vestingAccountsCache.totalOphirVesting
