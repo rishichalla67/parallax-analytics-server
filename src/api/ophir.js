@@ -56,7 +56,7 @@ const tokenMappings = {
     'ibc/EA459CE57199098BA5FFDBD3194F498AA78439328A92C7D136F06A5220903DA6': { symbol: 'ampWHALEt', decimals: 6},
     'ibc/6E5BF71FE1BEBBD648C8A7CB7A790AEF0081120B2E5746E6563FC95764716D61': { symbol: 'wBTC', decimals: 8},
     'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
-    'ibc/50D7251763B4D5E9DD7A8A6C6B012353E998CDE95C546C1F96D68F7CCB060918': { symbol: 'ampKuji', decimals: 6},
+    'ibc/50D7251763B4D5E9DD7A8A6C6B012353E998CDE95C546C1F96D68F7CCB060918': { symbol: 'ampkuji', decimals: 6},
     'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTCaxl', decimals: 8},
     'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8': {symbol: 'luna', decimals: 6},
     'factory/migaloo1erul6xyq0gk6ws98ncj7lnq9l4jn4gnnu9we73gdz78yyl2lr7qqrvcgup/ash': {symbol: 'ash', decimals: 6},
@@ -66,7 +66,7 @@ const tokenMappings = {
     'factory/osmo1rckme96ptawr4zwexxj5g5gej9s2dmud8r2t9j0k0prn5mch5g4snzzwjv/sail': {symbol: 'sail', decimals: 6},
     'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6},
     'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'ampUSDC', decimals: 6},
-    'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'axlUSDC', decimals: 6},
+    'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'usdc', decimals: 6},
     'ibc/40C29143BF4153B365089E40E437B7AA819672646C45BB0A5F1E10915A0B6708': {symbol: 'bLuna', decimals: 6},
     'ibc/05238E98A143496C8AF2B6067BABC84503909ECE9E45FBCBAC2CBA5C889FD82A': {symbol: 'ampLuna', decimals: 6},
     'factory/kujira16rujrka8vk3c7l7raa37km8eqcxv9z583p3c6e288q879rwp23ksy6efce/bOPHIR01': {symbol: "bOPHIR01", decimals: 6}
@@ -181,12 +181,29 @@ async function fetchCoinPrices(){
         prices[formattedKey] = value.usd;
     }
 
+    try {
+        const kujiraRatesResponse = await axios.get('https://lcd-kujira.mintthemoon.xyz/oracle/denoms/exchange_rates');
+        const kujiraRates = kujiraRatesResponse.data.exchange_rates;
+
+        for (const rate of kujiraRates) {
+            // Use the value from symbolDenomMap if it exists, otherwise use the original key
+            let formattedKey = rate.denom.toLowerCase();
+            // Only add if the key does not already exist in prices
+            if (!prices.hasOwnProperty(formattedKey)) {
+                prices[formattedKey] = parseFloat(rate.amount);
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching Kujira exchange rates:', error);
+    }
+
     prices['ampRoar'] = prices["roar"]*AMPROAR_ERIS_CONSTANT;
 
     // Custom logic for '.' in asset name
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
 
+    console.log(prices)
     return prices;
 }
 
@@ -521,6 +538,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     }
 
     let prices = {
+        ...cache.coinPrices,
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
@@ -531,25 +549,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: kujiPrice?.exchange_rate || 0,
-        ampKuji: ampKujiPrice?.exchange_rate || 0,
         whalewBtcLp: whalewBtcLpPrice,
-        shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
-        lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
-        juno: statData?.coinPrices["juno"] || cache?.coinPrices['juno'],
-        inj: statData?.coinPrices["inj"] || cache?.coinPrices['inj'],
-        osmo: statData?.coinPrices["osmo"] || cache?.coinPrices['osmo'],
-        usdt: statData?.coinPrices["usdt"] || cache?.coinPrices['usdt'],
-        sei: statData?.coinPrices["sei"] || cache?.coinPrices['sei'],
-        atom: statData?.coinPrices["atom"] || cache?.coinPrices['atom'],
-        cmdx: statData?.coinPrices["cmdx"] || cache?.coinPrices['cmdx'],
-        huahua: statData?.coinPrices["huahua"] || cache?.coinPrices['huahua'],
-        lunc: statData?.coinPrices["lunc"] || cache?.coinPrices['lunc'],
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
-        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc'],
         bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
         ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
@@ -736,8 +738,10 @@ async function getPrices(){
     } catch (error) {
         console.error('Error fetching Kuji Price:', error);
     }
-    
+
+
     let prices = {
+        ...cache.coinPrices,
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
         bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
@@ -748,28 +752,13 @@ async function getPrices(){
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
-        kuji: kujiPrice?.exchange_rate || 0,
-        ampKuji: ampKujiPrice?.exchange_rate || 0,
         whalewBtcLp: whalewBtcLpPrice,
-        shd: statData?.coinPrices["shd"] || cache?.coinPrices['shd'],
-        lvn: statData?.coinPrices["lvn"] || cache?.coinPrices['lvn'],
-        juno: statData?.coinPrices["juno"] || cache?.coinPrices['juno'],
-        inj: statData?.coinPrices["inj"] || cache?.coinPrices['inj'],
-        osmo: statData?.coinPrices["osmo"] || cache?.coinPrices['osmo'],
-        usdt: statData?.coinPrices["usdt"] || cache?.coinPrices['usdt'],
-        sei: statData?.coinPrices["sei"] || cache?.coinPrices['sei'],
-        atom: statData?.coinPrices["atom"] || cache?.coinPrices['atom'],
-        cmdx: statData?.coinPrices["cmdx"] || cache?.coinPrices['cmdx'],
-        huahua: statData?.coinPrices["huahua"] || cache?.coinPrices['huahua'],
-        lunc: statData?.coinPrices["lunc"] || cache?.coinPrices['lunc'],
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
-        roar: statData?.coinPrices["roar"] || cache?.coinPrices['roar'],
-        ampRoar: statData?.coinPrices["ampRoar"] || cache?.coinPrices['ampRoar'],
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        axlUSDC: statData?.coinPrices['usdc'] || cache?.coinPrices['usdc'],
         bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
         ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
+
     return prices;
 }
 
