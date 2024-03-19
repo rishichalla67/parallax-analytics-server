@@ -43,7 +43,7 @@ let treasuryCache = {
     treasuryValues: null // Cached data
 };
 let treasuryBalances, treasuryDelegations, treasuryUnbondings, treasuryRedelegations, totalTreasuryAssets, prices;
-const CACHE_IN_MINUTES = 1 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_IN_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 const tokenMappings = {
     'ibc/517E13F14A1245D4DE8CF467ADD4DA0058974CDCC880FA6AE536DBCA1D16D84E': { symbol: 'bWhale', decimals: 6 },
@@ -709,7 +709,7 @@ async function getPrices(){
     let kujiPrice = 0;
     let statData;
     const now = Date.now();
-    const cacheTimeLimit = 250000; // 60000 milliseconds in a minute
+    const cacheTimeLimit = 300000; // 60000 milliseconds in a minute
     // Check if cache is valid
     if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
@@ -887,7 +887,7 @@ const fetchDataAndStore = async () => {
 router.get('/treasury/chartData/:assetName', async (req, res) => {
     const { assetName } = req.params;
     const now = Date.now();
-    const fifteenMinutes = 15 * 60 * 1000; // 15 minutes in milliseconds
+    const fifteenMinutes = 30 * 60 * 1000; // 30 minutes in milliseconds
   
     // Check if the asset data is cached and still valid
     if (assetDataCache[assetName] && (now - assetDataCache[assetName].timestamp < fifteenMinutes)) {
