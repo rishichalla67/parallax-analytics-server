@@ -248,6 +248,28 @@ async function filterKujiraGhost(kujiraData){
   return structuredData;
 }
 
+router.get('/fetchGhostPrices', async (req, res) => {
+  const { contract } = req.query;
+  if (!contract) {
+    return res.status(400).send('Contract parameter is required');
+  }
+
+  try {
+    let pricesObj = {};
+    const response = await axios.get(`https://api.kujira.app/api/trades?contract=${contract}`);
+    const data = response.data;
+    if (data.trades && data.trades.length > 0) {
+      pricesObj["price"] = data.trades[0].trade_price;
+    }
+    console.log(pricesObj);
+    return res.json(pricesObj);
+  } catch (error) {
+    console.error(`Error fetching ghost prices for contract: ${contract} - ${error}`);
+    return res.status(500).send('Internal Server Error');
+  }
+});
+
+
 router.get('/findProfitablePaths', async (req, res) => {
   const { asset } = req.query;
 
