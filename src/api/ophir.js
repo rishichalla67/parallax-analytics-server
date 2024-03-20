@@ -1408,7 +1408,6 @@ async function queryTransaction(txHash) {
     try {
       const client = await StargateClient.connect(rpcEndpoint);
       const tx = await client.getTx(txHash);
-        console.log(tx)
       if (tx) {
 
         return tx.rawLog; 
