@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { StargateClient } = require("@cosmjs/stargate");
 const { getDatabase } = require('firebase-admin/database');
 const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
@@ -1395,6 +1396,39 @@ router.get('/denoms', async (req, res) => {
         res.status(200).json(invertedMappings);
     } catch (error) {
         console.error('Error fetching denoms with symbols:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
+
+
+async function queryTransaction(txHash) {
+    const rpcEndpoint = "https://migaloo-testnet-rpc.polkachu.com"; // Replace with the actual RPC endpoint
+  
+    try {
+      const client = await StargateClient.connect(rpcEndpoint);
+      const tx = await client.getTx(txHash);
+        console.log(tx)
+      if (tx) {
+
+        return tx.rawLog; 
+      } else {
+        console.log("Transaction not found");
+        return null; // Return null if the transaction is not found
+      }
+    } catch (error) {
+      console.error("Error querying transaction:", error);
+      throw error; // Rethrow the error to handle it outside this function if necessary
+    }
+}
+
+router.get('/migaloo-testnet/:txHash', async (req, res) => {
+    const txHash = req.params.txHash;
+    try {
+        const queryResult = await queryTransaction(txHash);
+        res.status(200).json(queryResult);
+    } catch (error) {
+        console.error('Error querying transaction:', error);
         res.status(500).send('Internal server error');
     }
 });
