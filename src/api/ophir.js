@@ -56,7 +56,7 @@ const tokenMappings = {
     'ibc/EA459CE57199098BA5FFDBD3194F498AA78439328A92C7D136F06A5220903DA6': { symbol: 'ampWHALEt', decimals: 6},
     'ibc/6E5BF71FE1BEBBD648C8A7CB7A790AEF0081120B2E5746E6563FC95764716D61': { symbol: 'wBTC', decimals: 8},
     'ibc/EF4222BF77971A75F4E655E2AD2AFDDC520CE428EF938A1C91157E9DFBFF32A3': { symbol: 'kuji', decimals: 6},
-    'ibc/50D7251763B4D5E9DD7A8A6C6B012353E998CDE95C546C1F96D68F7CCB060918': { symbol: 'ampkuji', decimals: 6},
+    'ibc/50D7251763B4D5E9DD7A8A6C6B012353E998CDE95C546C1F96D68F7CCB060918': { symbol: 'ampKuji', decimals: 6},
     'ibc/B65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B': {symbol: 'wBTCaxl', decimals: 8},
     'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8': {symbol: 'luna', decimals: 6},
     'factory/migaloo1erul6xyq0gk6ws98ncj7lnq9l4jn4gnnu9we73gdz78yyl2lr7qqrvcgup/ash': {symbol: 'ash', decimals: 6},
@@ -188,6 +188,10 @@ async function fetchCoinPrices(){
         for (const rate of kujiraRates) {
             // Use the value from symbolDenomMap if it exists, otherwise use the original key
             let formattedKey = rate.denom.toLowerCase();
+            // Change key to 'ampKuji' if formattedKey is 'ampkuji'
+            if (formattedKey === 'ampkuji') {
+                formattedKey = 'ampKuji';
+            }
             // Only add if the key does not already exist in prices
             if (!prices.hasOwnProperty(formattedKey)) {
                 prices[formattedKey] = parseFloat(rate.amount);
