@@ -1403,8 +1403,8 @@ router.get('/denoms', async (req, res) => {
 
 
 async function queryTransaction(txHash) {
-    const rpcEndpoint = "https://migaloo-testnet-rpc.polkachu.com"; // Replace with the actual RPC endpoint
-  
+    const rpcEndpoint = "https://migaloo-testnet-rpc.polkachu.com"; 
+
     try {
       const client = await StargateClient.connect(rpcEndpoint);
       const tx = await client.getTx(txHash);
@@ -1425,7 +1425,13 @@ router.get('/migaloo-testnet/:txHash', async (req, res) => {
     const txHash = req.params.txHash;
     try {
         const queryResult = await queryTransaction(txHash);
-        res.status(200).json(queryResult);
+        try {
+            const parsedResult = JSON.parse(queryResult); // Attempt to parse the queryResult as JSON
+            res.status(200).json(parsedResult);
+        } catch (parseError) {
+            // If parsing fails, return the queryResult as is, assuming it's a plain string message
+            res.status(200).json({ message: queryResult });
+        }
     } catch (error) {
         console.error('Error querying transaction:', error);
         res.status(500).send('Internal server error');
