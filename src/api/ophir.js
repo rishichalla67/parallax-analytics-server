@@ -1060,7 +1060,9 @@ async function fetchAndProcessVestingAccounts() {
             }
 
             totalOphirVesting += amountVesting;
-
+            if (address === 'migaloo1jukdd76z4fzvf2vwpf4jfyeghdgnjmmsfveg4j') {
+                console.log(amountVesting);
+            }
             acc.push({
                 address,
                 amount: amountVesting,
@@ -1098,6 +1100,7 @@ const fetchVestingAccounts = async () => {
     try {
         const vestingAccountsUrl = 'https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==';
         const response = await axios.get(vestingAccountsUrl);
+        console.log(response.data.data.vesting_accounts);
         if (response.data && response.data.data) {
             // Update cache
             vestingAccountsCache = {
@@ -1131,25 +1134,30 @@ router.get('/seeker-vesting', async (req, res) => {
         const vestingDetailsUrl = `https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/${encodedQuery}`;
         let vestingDetails;
         let matchingAccount;
+        let amount;
         try {
             const vestingAccountsData = await fetchVestingAccounts();
             
             if (vestingAccountsData) {
                 matchingAccount = vestingAccountsData.find(account => account.address === contractAddress);
                 if (matchingAccount) {
+                    // console.log(matchingAccount.info.schedules[0])
                     const { start_point, end_point } = matchingAccount.info.schedules[0];
                     vestingStart = start_point.time;
                     vestingEnd = end_point.time;
+                    amount = end_point.amount / 1000000;
                 }
             }
 
-            const response = await axios.get(vestingDetailsUrl);
-            if (response.data && response.data.data) {
-                vestingDetails = {
-                    amount: response.data.data / 1000000,
-                    date: new Date().toISOString() // Assuming the current date as vesting date for simplicity
-                };
-            }
+            // const response = await axios.get(vestingDetailsUrl);
+            // console.log(response)
+            // console.log(vestingDetailsUrl)
+            // if (response.data && response.data.data) {
+            //     vestingDetails = {
+            //         amount: response.data.data / 1000000,
+            //         date: new Date().toISOString() // Assuming the current date as vesting date for simplicity
+            //     };
+            // }
 
             // Fetch additional vesting accounts data
             
@@ -1158,18 +1166,13 @@ router.get('/seeker-vesting', async (req, res) => {
             vestingDetails = null;
         }
 
-        if (!vestingDetails) {
-            return res.status(404).send('Vesting details not found for the given contract address');
-        }
-
         const response = {
             address: contractAddress,
-            amountVesting: vestingDetails.amount,
+            amountVesting: amount,
             vestingStart: vestingStart, // Assuming the date is stored in a readable format
             vestingEnd: vestingEnd,
             amountClaimed: matchingAccount.info.released_amount / 1000000,
         };
-
         res.json(response);
     } catch (error) {
         console.error('Error fetching vesting details:', error);
@@ -1180,6 +1183,7 @@ router.get('/seeker-vesting', async (req, res) => {
 router.get('/getAllSeekers', async (req, res) => {
     try {
         const { data: seekers, totalOphirVesting } = await fetchAndProcessVestingAccounts();
+        console.log(seekers)
         res.json({
             seekers,
             totalOphirVesting
