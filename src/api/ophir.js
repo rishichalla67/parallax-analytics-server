@@ -72,7 +72,10 @@ const tokenMappings = {
     'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'usdc', decimals: 6},
     'ibc/40C29143BF4153B365089E40E437B7AA819672646C45BB0A5F1E10915A0B6708': {symbol: 'bLuna', decimals: 6},
     'ibc/05238E98A143496C8AF2B6067BABC84503909ECE9E45FBCBAC2CBA5C889FD82A': {symbol: 'ampLuna', decimals: 6},
-    'factory/kujira16rujrka8vk3c7l7raa37km8eqcxv9z583p3c6e288q879rwp23ksy6efce/bOPHIR01': {symbol: "bOPHIR01", decimals: 6}
+    'factory/kujira16rujrka8vk3c7l7raa37km8eqcxv9z583p3c6e288q879rwp23ksy6efce/bOPHIR01': {symbol: "bOPHIR01", decimals: 6},
+    'ibc/2C962DAB9F57FE0921435426AE75196009FAA1981BF86991203C8411F8980FDB': {symbol: "usdc", decimals: 6}, //axlusdc transfer/channel-253
+    'ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4': {symbol: 'usdc', decimals: 6}, //axlUsdc transfer/channel-6 crypto-org-chain-mainnet-1 channel-56
+    'ibc/36A02FFC4E74DF4F64305130C3DFA1B06BEAC775648927AA44467C76A77AB8DB': {symbol: "whale", decimals: 6}
   };
 
 if (admin.apps.length === 0) {
