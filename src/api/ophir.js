@@ -332,14 +332,7 @@ function combineAllianceAssetsWithRewards(assets, rewards){
 function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, terraMSOpsWallet, migalooTreasury, migalooVault, migalooHotWallet, stakedSail, osmosisWWAssets, ampRoarAllianceStaked, ampRoarAllianceRewards) {
     let combined = {};
 
-    console.log(terraMSOpsWallet)
-    Object.keys(terraMSOpsWallet).forEach(key => {
-        combined[key] = {
-            balance: terraMSOpsWallet[key],
-            rewards: '0', // Assuming no rewards for these entries
-            location: 'Terra MS Ops Wallet'
-        };
-    });
+    
     // Process alliance data
     for (let key in lunaAlliance) {
         combined[key] = { 
@@ -459,6 +452,22 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, te
         location: "ampRoar Alliance Staked"
     };
 
+    Object.keys(terraMSOpsWallet).forEach(key => {
+        if (combined[key]) {
+            combined[key].balance = Number(combined[key].balance) + Number(terraMSOpsWallet[key]);
+            combined[key].location = "Terra MS Ops Wallet + " + combined[key].location;
+            combined[key].composition = {
+                ...combined[key].composition,
+                "Terra MS Ops Wallet": adjustSingleDecimal(key, terraMSOpsWallet[key])
+            };
+        } else {
+            combined[key] = {
+                balance: terraMSOpsWallet[key],
+                rewards: '0', // Assuming no rewards for these entries
+                location: 'Terra MS Ops Wallet'
+            };
+        }
+    });
 
 
     return combined;
