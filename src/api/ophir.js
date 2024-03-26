@@ -1517,5 +1517,16 @@ router.get('/', (req, res) => {
 // Run fetchDataAndStore every 45 minutes
 setInterval(fetchDataAndStore, 45 * 60 * 1000);
 
+let lastFetchTime = new Date(); // This would be dynamically set to the last actual fetch time in your application
+
+// Interval duration in milliseconds (30 minutes)
+const intervalDuration = 45 * 60 * 1000;
+
+// Calculate next update time by adding the interval to the last fetch time
+let nextUpdateTime = new Date(lastFetchTime.getTime() + intervalDuration);
+
+router.get('/nextUpdateTime', (req, res) => {
+    res.status(200).json({ nextUpdateTime: nextUpdateTime });
+});
 
 module.exports = router;
