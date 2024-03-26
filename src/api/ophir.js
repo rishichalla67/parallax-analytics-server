@@ -989,7 +989,7 @@ let treasuryChartDataCache = {
 // Endpoint to get all treasury data
 router.get('/treasury/chartData', async (req, res) => {
     const now = Date.now();
-    const cacheTimeLimit = 30 * 60 * 1000; // 30 minutes in milliseconds
+    const cacheTimeLimit = 45 * 60 * 1000; // 45 minutes in milliseconds
 
     // Check if cache is valid
     if (now - treasuryChartDataCache.lastFetch < cacheTimeLimit && treasuryChartDataCache.data) {
@@ -1022,7 +1022,7 @@ let totalValueChartDataCache = {
 
 router.get('/treasury/totalValueChartData', async (req, res) => {
     const now = Date.now();
-    const twelveHoursInMilliseconds = 12 * 60 * 60 * 1000;
+    const twelveHoursInMilliseconds = 24 * 60 * 60 * 1000; //24 hours
 
     // Check if the cache is valid
     if (now - totalValueChartDataCache.lastFetch < twelveHoursInMilliseconds && totalValueChartDataCache.data) {
