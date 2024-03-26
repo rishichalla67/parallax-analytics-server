@@ -1047,8 +1047,8 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
                 const utcHour = timestamp.getUTCHours();
                 const utcMinutes = timestamp.getUTCMinutes();
 
-                // Check if timestamp is between 12:00 PM UTC and 12:05 PM UTC
-                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 15) {
+                // Check if timestamp is between 12:00 PM UTC and 12:30 PM UTC
+                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 30) {
                     // Initialize the array for the date if it doesn't exist
                     if (!addedAssetsForDay[date]) {
                         addedAssetsForDay[date] = [];
