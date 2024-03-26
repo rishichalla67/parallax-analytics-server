@@ -1047,8 +1047,8 @@ router.get('/treasury/totalValueChartData', async (req, res) => {
                 const utcHour = timestamp.getUTCHours();
                 const utcMinutes = timestamp.getUTCMinutes();
 
-                // Check if timestamp is between 12:00 PM UTC and 12:30 PM UTC
-                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 30) {
+                // Check if timestamp is between 12:00 PM UTC and 12:45 PM UTC
+                if (utcHour === 12 && utcMinutes >= 0 && utcMinutes <= 45) {
                     // Initialize the array for the date if it doesn't exist
                     if (!addedAssetsForDay[date]) {
                         addedAssetsForDay[date] = [];
@@ -1514,8 +1514,8 @@ router.get('/', (req, res) => {
 });
 
 
-// Run fetchDataAndStore every 30 minutes
-setInterval(fetchDataAndStore, 30 * 60 * 1000);
+// Run fetchDataAndStore every 45 minutes
+setInterval(fetchDataAndStore, 45 * 60 * 1000);
 
 
 module.exports = router;
