@@ -1514,39 +1514,30 @@ router.get('/', (req, res) => {
 });
 
 
-let lastFetchTime = new Date(); // This would be dynamically set to the last actual fetch time in your application
+const cron = require('node-cron');
+let nextUpdateTime; 
+// Schedule the fetchDataAndStore function to run every 45 minutes
+cron.schedule('*/45 * * * * ', () => {
+    nextUpdateTime = getNextUpdateTime();
+    console.log('Fetching data and storing...')
+    fetchDataAndStore();
+});
 
-// Interval duration in milliseconds (45 minutes)
-const intervalDuration = 45 * 60 * 1000;
-
-function scheduleFetchDataAndStore() {
-    fetchDataAndStore(); // Execute immediately upon scheduling
-    lastFetchTime = new Date(); // Update the last fetch time to now
-
-    // Calculate the time until the next 45-minute mark from now
-    let timeUntilNextExecution = intervalDuration - (new Date() - lastFetchTime) % intervalDuration;
-
-    // Schedule the next execution at the 45-minute mark
-    setTimeout(() => {
-        fetchDataAndStore(); // Execute at the next 45-minute mark
-        lastFetchTime = new Date(); // Update the last fetch time
-
-        // Now set a regular interval every 45 minutes
-        setInterval(() => {
-            fetchDataAndStore();
-            lastFetchTime = new Date(); // Update the last fetch time
-        }, intervalDuration);
-    }, timeUntilNextExecution);
+// Calculate the next update time based on the current time
+function getNextUpdateTime() {
+    const now = new Date();
+    const nextUpdateTime = new Date(now);
+    nextUpdateTime.setMinutes(Math.ceil(now.getMinutes() / 45) * 45);
+    if (nextUpdateTime <= now) {
+        nextUpdateTime.setMinutes(nextUpdateTime.getMinutes() + 45);
+    }
+    return nextUpdateTime;
 }
 
-// Calculate next update time by adding the interval to the last fetch time
-let nextUpdateTime = new Date(lastFetchTime.getTime() + intervalDuration);
-
-// Call the scheduling function to start the process
-scheduleFetchDataAndStore();
-
 router.get('/nextUpdateTime', (req, res) => {
+    nextUpdateTime = getNextUpdateTime();
     res.status(200).json({ nextUpdateTime: nextUpdateTime });
 });
+
 
 module.exports = router;

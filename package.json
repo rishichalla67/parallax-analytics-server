@@ -29,6 +29,7 @@
     "firebase-admin": "^12.0.0",
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
     "redis": "^4.6.11"
   },
   "devDependencies": {
