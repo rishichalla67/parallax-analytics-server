@@ -1514,21 +1514,36 @@ router.get('/', (req, res) => {
 });
 
 
-// Run fetchDataAndStore every 45 minutes
 let lastFetchTime = new Date(); // This would be dynamically set to the last actual fetch time in your application
 
 // Interval duration in milliseconds (45 minutes)
 const intervalDuration = 45 * 60 * 1000;
 
-// Initially delay the execution of fetchDataAndStore by 45 minutes
-setTimeout(() => {
-    fetchDataAndStore();
-    // After the first execution, continue executing fetchDataAndStore every 45 minutes
-    setInterval(fetchDataAndStore, intervalDuration);
-}, intervalDuration);
+function scheduleFetchDataAndStore() {
+    fetchDataAndStore(); // Execute immediately upon scheduling
+    lastFetchTime = new Date(); // Update the last fetch time to now
+
+    // Calculate the time until the next 45-minute mark from now
+    let timeUntilNextExecution = intervalDuration - (new Date() - lastFetchTime) % intervalDuration;
+
+    // Schedule the next execution at the 45-minute mark
+    setTimeout(() => {
+        fetchDataAndStore(); // Execute at the next 45-minute mark
+        lastFetchTime = new Date(); // Update the last fetch time
+
+        // Now set a regular interval every 45 minutes
+        setInterval(() => {
+            fetchDataAndStore();
+            lastFetchTime = new Date(); // Update the last fetch time
+        }, intervalDuration);
+    }, timeUntilNextExecution);
+}
 
 // Calculate next update time by adding the interval to the last fetch time
 let nextUpdateTime = new Date(lastFetchTime.getTime() + intervalDuration);
+
+// Call the scheduling function to start the process
+scheduleFetchDataAndStore();
 
 router.get('/nextUpdateTime', (req, res) => {
     res.status(200).json({ nextUpdateTime: nextUpdateTime });
