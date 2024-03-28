@@ -1520,7 +1520,7 @@ let nextUpdateTime;
 cron.schedule('*/45 * * * * ', () => {
     nextUpdateTime = getNextUpdateTime();
     console.log('Fetching data and storing...')
-    fetchDataAndStore();
+    // fetchDataAndStore();
 });
 
 // Calculate the next update time based on the current time
