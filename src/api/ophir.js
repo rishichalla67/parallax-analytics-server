@@ -427,12 +427,9 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, te
     // Special handling for wBTC
     if (combined['wBTC']) {
         let originalAmount = combined['wBTC'].balance;
-        combined['wBTC'].balance = Number(combined['wBTC'].balance) + 28676272;
-        combined['wBTC'].location = "Migaloo Treasury + Migaloo Alliance";
-        combined['wBTC'].composition = {
-            "Migaloo Treasury": adjustSingleDecimal('wBTC', originalAmount),
-            "Migaloo Alliance": adjustSingleDecimal('wBTC', 28676272)
-        };
+        combined['wBTC'].balance = Number(combined['wBTC'].balance);
+        combined['wBTC'].location = "Migaloo Treasury";
+
     }
 
     let ampRoarBalance = 0;
