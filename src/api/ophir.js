@@ -1,5 +1,7 @@
 const express = require('express');
 const axios = require('axios');
+const { CosmWasmClient } = require('@cosmjs/cosmwasm-stargate');
+const { DirectSecp256k1HdWallet } = require('@cosmjs/proto-signing');
 const { StargateClient, QueryClient } = require("@cosmjs/stargate");
 const { setupWasmExtension } = require("@cosmjs/cosmwasm-stargate");
 const { getDatabase } = require('firebase-admin/database');
@@ -142,6 +144,16 @@ async function fetchWithTimeout(url, timeout = 5000, fallback = null) {
         });
     });
 }
+const migalooRPC = 'https://migaloo-rpc.polkachu.com/';
+async function queryContract(contractAddress, queryMsg) {
+    const mnemonic = "maid engine you ketchup daring segment talk exclude that wing over peasant"; // Ensure to securely manage the mnemonic
+    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix: "cosmos" }); // Adjust the prefix according to your chain's requirements
+    const [firstAccount] = await wallet.getAccounts();
+    const client = await CosmWasmClient.connect(migalooRPC);
+    const response = await client.queryContractSmart(contractAddress, queryMsg);
+    console.log(response);
+    return response;
+}
 
 async function fetchStatData() {
     const ophirCirculatingSupplyResponse = await fetchWithTimeout(
@@ -150,13 +162,18 @@ async function fetchStatData() {
         { data: OPHIR_TOTAL_SUPPLY } // Assuming OPHIR_TOTAL_SUPPLY is the desired fallback structure
     );
 
+    const poolDataQueryMsg = {
+        pool: {}
+    }
+
     // cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
     cache.whiteWhalePoolRawData = await axios.get('https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/pools/migaloo');
     cache.ophirCirculatingSupply = ophirCirculatingSupplyResponse;
     cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
     cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
-    cache.ophirWhalePoolData = await axios.get('https://migaloo-lcd.erisprotocol.com/cosmwasm/wasm/v1/contract/migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu/smart/eyJwb29sIjp7fX0=');
-    cache.whalewBtcPoolData = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/smart/eyJwb29sIjp7fX0=');
+    cache.ophirWhalePoolData = await queryContract('migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu', poolDataQueryMsg);
+    console.log("POOL",cache.ophirWhalePoolData)
+    cache.whalewBtcPoolData = await queryContract('migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z', poolDataQueryMsg);
     cache.coinPrices = await fetchCoinPrices();
     cache.lastFetch = Date.now();
 
@@ -220,10 +237,10 @@ async function fetchCoinPrices(){
 function getLPPrice(data, ophirwhaleRatio, whalePrice) {
     // Extract total share
     
-    const totalShare = data.data.total_share / Math.pow(10, 6);
+    const totalShare = data.total_share / Math.pow(10, 6);
 
     // Process each asset
-    const assets = data.data.assets.reduce((acc, asset) => {
+    const assets = data.assets.reduce((acc, asset) => {
         acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
         return acc;
     }, {});
@@ -237,10 +254,10 @@ function getLPPrice(data, ophirwhaleRatio, whalePrice) {
 
 function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
     // Extract total share
-    const totalShare = data.data.total_share / Math.pow(10, 6);
+    const totalShare = data.total_share / Math.pow(10, 6);
     // console.log(totalShare)
     // Process each asset
-    const assets = data.data.assets.reduce((acc, asset) => {
+    const assets = data.assets.reduce((acc, asset) => {
         // console.log(tokenMappings[asset.info.native_token.denom].symbol)
         acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
         return acc;
@@ -294,6 +311,7 @@ function swapKeysWithSymbols(balances) {
 function extractAllianceAssetBalances(dataArray) {
     let arrayData = Array.isArray(dataArray) ? dataArray : [dataArray];
     let balances = {};
+    console.log(arrayData)
     arrayData.forEach(item => {
         if(item.balance > 0){
             let assetKey = item.asset.native;
@@ -537,9 +555,10 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     let kujiPrice = 0;
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     // console.log(statData?.whiteWhalePoolRawData.data.data);
+    console.log(statData?.ophirWhalePoolData.data)
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
-    const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
-    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
+    const ophirWhaleLpPrice = getLPPrice(statData?.ophirWhalePoolData || cache?.ophirWhalePoolData, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
+    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     try {
         const response = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
         sailWhaleLpData = response.data || 0;
@@ -729,6 +748,22 @@ async function getTreasuryAssets(){
         return treasuryCache.data; // Return cached data if it's less than 1 minute old
     }
 
+    const stakingBalanceQueryMsg = {
+        staked_balance: {
+            address: "migaloo1x6n9zg63auhtuvgucvnez0whnaaemqpgrnl0sl8vfg9hjved76pqngtmgk",
+            asset: {
+                native: "factory/migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z/uLP"
+            }   
+        }
+      }
+    
+    const stakingRewardsQueryMsg = {
+        all_pending_rewards: {
+            address: "migaloo1x6n9zg63auhtuvgucvnez0whnaaemqpgrnl0sl8vfg9hjved76pqngtmgk"
+        }
+    };
+        
+
     const migalooRPC = "https://migaloo-rpc.polkachu.com/";
     const terraRPC = "https://terra-rpc.polkachu.com/"
 
@@ -737,18 +772,20 @@ async function getTreasuryAssets(){
     const ophirVaultMigalooAssets = await queryChainBalances(migalooRPC, 'migaloo14gu2xfk4m3x64nfkv9cvvjgmv2ymwhps7fwemk29x32k2qhdrmdsp9y2wu');
     const migalooHotWallet = await queryChainBalances(migalooRPC, 'migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3');
     const terraMSOpsWallet = await queryChainBalances(terraRPC, 'terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3')
-    console.log(terraMSOpsWallet);
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
     const allianceMigalooStakingAssets = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0=');
+    // const allianceMigalooStakingAssets = await queryContract("migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd", stakingBalanceQueryMsg);
     const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
+    // const allianceMigalooStakingRewards = await queryContract('migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd', stakingRewardsQueryMsg);
+
     const stakedSailAmount = await axios.get('https://indexer.daodao.zone/osmosis-1/contract/osmo14gz8xpzm5sj9acxfmgzzqh0strtuyhce08zm7pmqlkq6n4g5g6wq0924n8/daoVotingTokenStaked/votingPower?address=osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf');
     const osmosisWWBondedAssets = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1mfqvxmv2gx62hglaegdv3useqjj44kxrl69nlt4tkysy9dx8g25sq40kez/smart/ewogICJib25kZWQiOiB7CiAgICAiYWRkcmVzcyI6ICJvc21vMXR6bDAzNjJsZHRzcmFkc2duNGdtdThwZDg3OTRxank2NmNsOHEyZmY0M2V2Y2xnd2Q3N3MycXZ3bDYiCiAgfQp9');
     const ampRoarAllianceStaked = await axios.get('https://phoenix-lcd.terra.dev/terra/alliances/delegations/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3');
     const ampRoarAllianceRewards = await axios.get('https://phoenix-lcd.erisprotocol.com/terra/alliances/rewards/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3/terravaloper120ppepaj2lh5vreadx42wnjjznh55vvktp78wk/factory%252Fterra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy%252FampROAR');
     // const osmosisAlliancewBTCRewards = await axios.get('https://celatone-api-prod.alleslabs.dev/rest/osmosis/osmosis-1/cosmwasm/wasm/v1/contract/osmo1ec7fqky6cq9xds6hq0e46f25ldnkkvjjkml7644y8la59ucqmtfsyyhh75/smart/ew0KICAiY2xhaW1hYmxlIjogew0KICAgICJhZGRyZXNzIjogIm9zbW8xdHpsMDM2MmxkdHNyYWRzZ240Z211OHBkODc5NHFqeTY2Y2w4cTJmZjQzZXZjbGd3ZDc3czJxdndsNiINCiAgfQ0KfQ==');
 
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStaked.data, ampRoarAllianceRewards.data);
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStaked.data, ampRoarAllianceRewards.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
     // console.log(adjustDecimals(totalTreasuryAssets))
     // Cache the new data with the current timestamp
