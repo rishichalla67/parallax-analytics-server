@@ -356,6 +356,22 @@ function combineAllianceAssetsWithRewards(assets, rewards){
 function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, terraMSOpsWallet, migalooTreasury, migalooVault, migalooHotWallet, stakedSail, osmosisWWAssets, ampRoarAllianceStaked, ampRoarAllianceRewards) {
     let combined = {};
 
+    let ampRoarBalance = 0;
+    let ampRoarRewards = 0;
+
+
+    ampRoarAllianceStaked.delegations.forEach(delegation => {
+        ampRoarBalance += Number(delegation.balance.amount);
+    });
+
+    ampRoarRewards = ampRoarAllianceRewards.rewards.find(reward => reward.denom === 'uluna').amount;
+    // console.log(ampRoarRewards);
+
+    combined['ampRoar'] = {
+        balance: ampRoarBalance,
+        rewards: ampRoarRewards,
+        location: "ampRoar Alliance Staked"
+    };
     
     // Process alliance data
     for (let key in lunaAlliance) {
@@ -455,23 +471,6 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, te
         combined['wBTC'].location = "Migaloo Treasury";
 
     }
-
-    let ampRoarBalance = 0;
-    let ampRoarRewards = 0;
-
-
-    ampRoarAllianceStaked.delegations.forEach(delegation => {
-        ampRoarBalance += Number(delegation.balance.amount);
-    });
-
-    ampRoarRewards = ampRoarAllianceRewards.rewards.find(reward => reward.denom === 'uluna').amount;
-    // console.log(ampRoarRewards);
-
-    combined['ampRoar'] = {
-        balance: ampRoarBalance,
-        rewards: ampRoarRewards,
-        location: "ampRoar Alliance Staked"
-    };
 
     Object.keys(terraMSOpsWallet).forEach(key => {
         if (combined[key]) {
