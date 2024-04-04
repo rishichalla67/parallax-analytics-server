@@ -237,24 +237,30 @@ async function fetchCoinPrices(){
 function getLPPrice(data, ophirwhaleRatio, whalePrice) {
     // Extract total share
     console.log("getLPPrice data: ", data)
-    const totalShare = data?.total_share / Math.pow(10, 6);
+    const totalShare = data?.total_share / Math.pow(10, 6); // Assuming LP shares are also in 6 decimals
 
     // Process each asset
     const assets = data?.assets.reduce((acc, asset) => {
-        acc[tokenMappings[asset.info.native_token.denom].symbol] = (Number(asset.amount) / Math.pow(10, getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)));
+        // Assuming the structure of `info` object to extract the denom
+        const denom = asset.info?.native_token?.denom || asset.info?.token?.contract_addr;
+        if (denom) {
+            const symbol = tokenMappings[denom]?.symbol;
+            const decimals = tokenMappings[denom]?.decimals;
+            if (symbol && decimals !== undefined) {
+                acc[symbol] = (Number(asset.amount) / Math.pow(10, decimals));
+            }
+        }
         return acc;
     }, {});
-    // console.log(assets)
-    // console.log(totalShare)
-
-    let whaleValue = assets['whale']*whalePrice;
-    let ophirValue = assets['ophir']*(ophirwhaleRatio*whalePrice);
-    return (whaleValue+ophirValue)/totalShare;
+    console.log(assets)
+    let whaleValue = assets['whale'] * whalePrice;
+    let ophirValue = assets['ophir'] * (ophirwhaleRatio * whalePrice);
+    return (whaleValue + ophirValue) / totalShare;
 }
 
 function getWhalewBtcLPPrice(data, whalewBtcRatio, whalePrice, wBTCPrice) {
     // Extract total share
-    const totalShare = data.total_share / Math.pow(10, 6);
+    const totalShare = data?.total_share / Math.pow(10, 6);
     // console.log(totalShare)
     // Process each asset
     const assets = data.assets.reduce((acc, asset) => {
@@ -558,7 +564,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     // console.log(statData?.ophirWhalePoolData.data)
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(statData?.ophirWhalePoolData || cache?.ophirWhalePoolData, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
-    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
+    const whalewBtcLpPrice = getWhalewBtcLPPrice(statData?.whalewBtcPoolData || cache?.whalewBtcPoolData, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     try {
         const response = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
         sailWhaleLpData = response.data || 0;
@@ -815,8 +821,8 @@ async function getPrices(){
     }
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'] || 0;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
-    const ophirWhaleLpPrice = getLPPrice(cache?.ophirWhalePoolData.data, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
-    const whalewBtcLpPrice = getWhalewBtcLPPrice(cache?.whalewBtcPoolData.data, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
+    const ophirWhaleLpPrice = getLPPrice(statData?.ophirWhalePoolData || cache?.ophirWhalePoolData, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
+    const whalewBtcLpPrice = getWhalewBtcLPPrice(statData?.whalewBtcPoolData || cache?.whalewBtcPoolData, whiteWhalePoolFilteredData["WHALE-wBTC"], whalePrice, statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC']);
     try {
         const response = await axios.get('https://lcd.osmosis.zone/cosmwasm/wasm/v1/contract/osmo1w8e2wyzhrg3y5ghe9yg0xn0u7548e627zs7xahfvn5l63ry2x8zstaraxs/smart/ewogICJwb29sIjoge30KfQo=');
         sailWhaleLpData = response.data || 0;
