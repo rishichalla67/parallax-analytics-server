@@ -15,6 +15,7 @@ const BLUNA_CONSTANT = 1/0.844848;
 const AMPLUNA_ERIS_CONSTANT = 1.3356;
 const UNSOLD_OPHIR_FUZION_BONDS = 47175732.096;
 const LAB_DENOM = 'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB';
+const SHARK_DENOM ="ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834";
 const USDC_DENOM = "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
 
 const cache = {
@@ -80,7 +81,8 @@ const tokenMappings = {
     'ibc/2C962DAB9F57FE0921435426AE75196009FAA1981BF86991203C8411F8980FDB': {symbol: "usdc", decimals: 6}, //axlusdc transfer/channel-253
     'ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4': {symbol: 'usdc', decimals: 6}, //axlUsdc transfer/channel-6 crypto-org-chain-mainnet-1 channel-56
     'ibc/36A02FFC4E74DF4F64305130C3DFA1B06BEAC775648927AA44467C76A77AB8DB': {symbol: "whale", decimals: 6},
-    'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB': {symbol: "lab", decimals: 6}
+    'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB': {symbol: "lab", decimals: 6},
+    'ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834': {symbol: "shark", decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -223,6 +225,15 @@ async function fetchCoinPrices(){
     } catch (error) {
         console.error('Error fetching LAB price:', error);
         prices['lab'] = 'Error fetching data';
+    }
+
+    try {
+        const sharkPriceResponse = await axios.get('https://sqsprod.osmosis.zone/tokens/prices?base=ibc%2F64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834');
+        const sharkPriceData = sharkPriceResponse.data[SHARK_DENOM][USDC_DENOM];
+        prices['shark'] = parseFloat(sharkPriceData);
+    } catch (error) {
+        console.error('Error fetching shark price:', error);
+        prices['shark'] = 'Error fetching data';
     }
 
     // Fetch additional price data
