@@ -120,10 +120,29 @@ function filterPoolsWithPrice(data) {
 
 function getOphirContractBalance(data){
     const ophirTokenInfo = tokenMappings[OPHIR];
+    console.log("BALANCES DATA: ", data)
     ubalance = data.balances[OPHIR];
     balance = ubalance / Math.pow(10, ophirTokenInfo.decimals);
     return balance;
 }
+
+function getMigalooContractBalance(data, tokenId = OPHIR) {
+    const tokenInfo = tokenMappings[tokenId];
+    if (!tokenInfo) {
+        console.error(`Token info not found for tokenId: ${tokenId}`);
+        return 0; // or handle this case as needed
+    }
+
+    try {
+        const ubalance = Number(data[0].amount); // Using BigInt for large numbers
+        const balance = ubalance / Math.pow(10, tokenInfo.decimals);
+        return Number(balance); // Convert back to Number if necessary, or keep as BigInt depending on use case
+    } catch (error) {
+        console.error("Error calculating balance:", error);
+        return 0; // or handle this case as needed
+    }
+}
+
 
 const formatNumber = (number, decimal) => {
     return number.toLocaleString('en-US', {
@@ -175,7 +194,6 @@ async function queryAccountBalances(accountAddress, chain) {
     }
     const client = await StargateClient.connect(rpc);   
     const balances = await client.getAllBalances(accountAddress);
-    console.log(balances);
     return balances;
 }
 
@@ -190,15 +208,13 @@ async function fetchStatData() {
         pool: {}
     }
 
-    // cache.whiteWhalePoolRawData = await axios.get('https://www.api-white-whale.enigma-validator.com/summary/migaloo/all/current');
     cache.whiteWhalePoolRawData = await axios.get('https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/pools/migaloo');
     cache.ophirCirculatingSupply = ophirCirculatingSupplyResponse;
-    cache.ophirStakedSupplyRaw = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh');
-    cache.ophirInMine = await axios.get('https://migaloo.explorer.interbloc.org/account/migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh');
+    cache.ophirStakedSupplyRaw = await queryAccountBalances('migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh', 'migaloo');
+    cache.ophirInMine = await queryAccountBalances('migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh','migaloo');
     cache.ophirWhalePoolData = await queryContract('migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu', poolDataQueryMsg, 'migaloo');
     cache.whalewBtcPoolData = await queryContract('migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z', poolDataQueryMsg, 'migaloo');
     cache.osmosisHotWalletData = await queryAccountBalances('osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf', 'osmosis');
-    console.log(cache.osmosisHotWalletData)
     cache.coinPrices = await fetchCoinPrices();
     cache.lastFetch = Date.now();
 
@@ -676,7 +692,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
             totalValueWithoutOphir += balance * price;
         }
     }
-    ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
+    ophirStakedSupply = getMigalooContractBalance(cache.ophirStakedSupplyRaw);
 
     // const ophirMigalooVaultAmount = (balances['ophir'] && (balances['ophir']?.location === "Migaloo Vault")) ? balances['ophir'].balance : "Migaloo Vault" in balances['ophir']?.composition ? balances['ophir']?.composition['Migaloo Vault'] : 0;
 
@@ -706,7 +722,6 @@ function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, mig
 
     let lunaAlliance = compactAlliance(allianceStakingAssetsData, allianceStakingRewardsData);
     let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
-
     let osmosisWWAssets = getOsmosisBondedAssets(osmosisWWBondedAssets);
     // console.log(osmosisWWAssets) 
 
@@ -727,13 +742,13 @@ router.get('/stats', async (req, res) => {
             whiteWhalePoolFilteredData = {}; // Default to empty object to prevent further errors
         }
         try {
-            ophirStakedSupply = getOphirContractBalance(cache.ophirStakedSupplyRaw.data);
+            ophirStakedSupply = getMigalooContractBalance(cache?.ophirStakedSupplyRaw);
         } catch (error) {
             console.error('Error getting Ophir Staked Supply:', error);
             ophirStakedSupply = 0; // Default to 0 to prevent further errors
         }
         try {
-            ophirInMine = getOphirContractBalance(cache.ophirInMine.data);
+            ophirInMine = getMigalooContractBalance(cache.ophirInMine);
         } catch (error) {
             console.error('Error getting Ophir in Mine:', error);
             ophirInMine = 0; // Default to 0 to prevent further errors
@@ -841,8 +856,8 @@ async function getTreasuryAssets(){
     const migalooHotWallet = await queryChainBalances(migalooRPC, 'migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3');
     const terraMSOpsWallet = await queryChainBalances(terraRPC, 'terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3')
     const osmosisHotWallet = await queryChainBalances(osmosisRPC, 'osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf')
-    const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ew0KICAiYWxsX3N0YWtlZF9iYWxhbmNlcyI6IHsNCiAgICAiYWRkcmVzcyI6ICJ0ZXJyYTFoZzU1ZGpheWNyd2dtMHZxeWR1bDNhZDNrNjRqbjBqYXRudWg5d2p4Y3h3dHhyczZteHpzaHhxamYzIg0KICB9DQp9');
-    const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExaGc1NWRqYXljcndnbTB2cXlkdWwzYWQzazY0am4wamF0bnVoOXdqeGN4d3R4cnM2bXh6c2h4cWpmMyJ9Cn0=');
+    const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfc3Rha2VkX2JhbGFuY2VzIjogewogICAgImFkZHJlc3MiOiAidGVycmExdGpmOTVxZWo3Zm1ja2M5MjdzN3dja214Z2dmdGgyM3VucDRkbmw0OXhheGVjNXdlYTlucTl5czMwciIKICB9Cn0=');
+    const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExdGpmOTVxZWo3Zm1ja2M5MjdzN3dja214Z2dmdGgyM3VucDRkbmw0OXhheGVjNXdlYTlucTl5czMwciJ9Cn0=');
     const allianceMigalooStakingAssets = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0=');
     // const allianceMigalooStakingAssets = await queryContract("migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd", stakingBalanceQueryMsg);
     const allianceMigalooStakingRewards = await axios.get('https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0=');
