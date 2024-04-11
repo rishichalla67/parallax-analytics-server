@@ -75,7 +75,7 @@ const tokenMappings = {
     'factory/terra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy/ampROAR': {symbol: 'ampRoar', decimals: 6},
     'factory/migaloo1cwk3hg5g0rz32u6us8my045ge7es0jnmtfpwt50rv6nagk5aalasa733pt/ampUSDC': {symbol: 'ampUSDC', decimals: 6},
     'ibc/BC5C0BAFD19A5E4133FDA0F3E04AE1FBEE75A4A226554B2CBB021089FF2E1F8A': {symbol: 'usdc', decimals: 6},
-    'ibc/40C29143BF4153B365089E40E437B7AA819672646C45BB0A5F1E10915A0B6708': {symbol: 'bLuna', decimals: 6},
+    'ibc/40C29143BF4153B365089E40E437B7AA819672646C45BB0A5F1E10915A0B6708': {symbol: 'bluna', decimals: 6},
     'ibc/05238E98A143496C8AF2B6067BABC84503909ECE9E45FBCBAC2CBA5C889FD82A': {symbol: 'ampLuna', decimals: 6},
     'factory/kujira16rujrka8vk3c7l7raa37km8eqcxv9z583p3c6e288q879rwp23ksy6efce/bOPHIR01': {symbol: "bOPHIR01", decimals: 6},
     'ibc/2C962DAB9F57FE0921435426AE75196009FAA1981BF86991203C8411F8980FDB': {symbol: "usdc", decimals: 6}, //axlusdc transfer/channel-253
@@ -427,7 +427,7 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, te
     });
 
     // ampRoarRewards = ampRoarAllianceRewards.rewards.find(reward => reward.denom === 'uluna').amount;
-    // console.log(ampRoarRewards);
+    console.log(migalooHotWallet);
 
     combined['ampRoar'] = {
         balance: ampRoarBalance,
@@ -583,11 +583,11 @@ function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, te
         }
     }
     if (terraMSOpsWalletbluna) {
-        if (combined['bLuna']) {
-            combined['bLuna'].balance = Number(combined['bLuna'].balance) + Number(terraMSOpsWalletbluna); // Fixed incorrect property access for bLuna balance
-            combined['bLuna'].location = "Terra Polytone Wallet + " + combined['bLuna'].location;
+        if (combined['bluna']) {
+            combined['bluna'].balance = Number(combined['bluna'].balance) + Number(terraMSOpsWalletbluna); // Fixed incorrect property access for bLuna balance
+            combined['bluna'].location = "Terra Polytone Wallet + " + combined['bluna'].location;
         } else {
-            combined['bLuna'] = {
+            combined['bluna'] = {
                 balance: Number(terraMSOpsWalletbluna),
                 rewards: '0',
                 location: 'Terra Polytone Wallet'
