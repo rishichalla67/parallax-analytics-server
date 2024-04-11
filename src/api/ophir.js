@@ -185,7 +185,6 @@ async function queryContract(contractAddress, queryMsg, chain) {
     }
     const client = await CosmWasmClient.connect(rpc);
     const response = await client.queryContractSmart(contractAddress, queryMsg);
-    console.log("RESPONSE: ", response);
     return response;
 }
 
@@ -891,10 +890,8 @@ async function getTreasuryAssets(){
     const migalooHotWallet = await queryChainBalances(migalooRPC, 'migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3');
 
     const terraMSOpsWallet = await queryChainBalances(terraRPC, 'terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3')
-    // console.log("TERRA MS OPS: ", terraMSOpsWallet)
     const terraMSOpsWalletampluna = await queryContract('terra1ecgazyd0waaj3g7l9cmy5gulhxkps2gmxu9ghducvuypjq68mq2s5lvsct', stakeQueryMsg, 'terra'); // ampluna
     const terraMSOpsWalletbluna = await queryContract('terra17aj4ty4sz4yhgm08na8drc0v03v2jwr3waxcqrwhajj729zhl7zqnpc0ml', stakeQueryMsg, 'terra'); // bluna
-
     const osmosisHotWallet = await queryChainBalances(osmosisRPC, 'osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf')
     const allianceStakingAssets = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfc3Rha2VkX2JhbGFuY2VzIjogewogICAgImFkZHJlc3MiOiAidGVycmExdGpmOTVxZWo3Zm1ja2M5MjdzN3dja214Z2dmdGgyM3VucDRkbmw0OXhheGVjNXdlYTlucTl5czMwciIKICB9Cn0=');
     const allianceStakingRewards = await axios.get('https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExdGpmOTVxZWo3Zm1ja2M5MjdzN3dja214Z2dmdGgyM3VucDRkbmw0OXhheGVjNXdlYTlucTl5czMwciJ9Cn0=');
@@ -1658,6 +1655,18 @@ router.get('/migaloo-testnet/:txHash', async (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
+
+router.get('/nft-stats/runestone', async (req, res) => {
+    const apiUrl = 'https://api-mainnet.magiceden.io/v2/ord/btc/stat?collectionSymbol=runestone';
+    try {
+        const response = await axios.get(apiUrl);
+        res.status(200).json(response.data);
+    } catch (error) {
+        console.error('Error fetching Runestone stats:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
 
 
 router.get('/', (req, res) => {
