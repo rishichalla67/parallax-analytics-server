@@ -416,18 +416,17 @@ function combineAllianceAssetsWithRewards(assets, rewards){
     return combined;
 }
 
-function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, migalooTreasury, migalooVault, migalooHotWallet, osmosisHotWallet, stakedSail, osmosisWWAssets, ampRoarAllianceStaked, ampRoarAllianceRewards) {
+function addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, migalooTreasury, migalooVault, migalooHotWallet, osmosisHotWallet, stakedSail, osmosisWWAssets, ampRoarAllianceStaked) {
     let combined = {};
 
     let ampRoarBalance = 0;
     let ampRoarRewards = 0;
 
-
     ampRoarAllianceStaked.delegations.forEach(delegation => {
         ampRoarBalance += Number(delegation.balance.amount);
     });
 
-    ampRoarRewards = ampRoarAllianceRewards.rewards.find(reward => reward.denom === 'uluna').amount;
+    // ampRoarRewards = ampRoarAllianceRewards.rewards.find(reward => reward.denom === 'uluna').amount;
     // console.log(ampRoarRewards);
 
     combined['ampRoar'] = {
@@ -745,7 +744,7 @@ function compactAlliance(assetData, rewardsData){
     return combineAllianceAssetsWithRewards(stakingAssets, stakingRewards);
 }
 
-function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, osmosisHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData, stakedSail, osmosisWWBondedAssets, ampRoarAllianceStaked, ampRoarAllianceRewards) {
+function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, osmosisHotWallet, allianceStakingAssetsData, allianceStakingRewardsData, allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData, stakedSail, osmosisWWBondedAssets, ampRoarAllianceStaked) {
     // Parse the JSON data
     // const data = JSON.parse(jsonData);
 
@@ -753,7 +752,7 @@ function parseOphirDaoTreasury(migalooTreasuryData, ophirVaultMigalooAssets, mig
     let migalooAlliance = compactAlliance(allianceMigalooStakingAssetsData, allianceMigalooStakingRewardsData);
     let osmosisWWAssets = getOsmosisBondedAssets(osmosisWWBondedAssets);
     // console.log(osmosisWWAssets) 
-    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(terraMSOpsWallet.balances) , terraMSOpsWalletampluna.balance, terraMSOpsWalletbluna.balance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(ophirVaultMigalooAssets.balances),swapKeysWithSymbols(migalooHotWallet.balances), swapKeysWithSymbols(osmosisHotWallet.balances), stakedSail, osmosisWWAssets, ampRoarAllianceStaked, ampRoarAllianceRewards);
+    totalTreasuryAssets = addAllianceAssetsAndRewardsToTreasury(lunaAlliance, migalooAlliance, swapKeysWithSymbols(terraMSOpsWallet.balances) , terraMSOpsWalletampluna.balance, terraMSOpsWalletbluna.balance, swapKeysWithSymbols(migalooTreasuryData.balances), swapKeysWithSymbols(ophirVaultMigalooAssets.balances),swapKeysWithSymbols(migalooHotWallet.balances), swapKeysWithSymbols(osmosisHotWallet.balances), stakedSail, osmosisWWAssets, ampRoarAllianceStaked);
     treasuryBalances = swapKeysWithSymbols(migalooTreasuryData.balances);
 }
  
@@ -905,7 +904,7 @@ async function getTreasuryAssets(){
     const ampRoarAllianceStaked = await axios.get('https://phoenix-lcd.terra.dev/terra/alliances/delegations/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3');
     // const ampRoarAllianceRewards = await axios.get('https://phoenix-lcd.erisprotocol.com/terra/alliances/rewards/terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3/terravaloper120ppepaj2lh5vreadx42wnjjznh55vvktp78wk/factory%252Fterra1vklefn7n6cchn0u962w3gaszr4vf52wjvd4y95t2sydwpmpdtszsqvk9wy%252FampROAR');
     // const osmosisAlliancewBTCRewards = await axios.get('https://celatone-api-prod.alleslabs.dev/rest/osmosis/osmosis-1/cosmwasm/wasm/v1/contract/osmo1ec7fqky6cq9xds6hq0e46f25ldnkkvjjkml7644y8la59ucqmtfsyyhh75/smart/ew0KICAiY2xhaW1hYmxlIjogew0KICAgICJhZGRyZXNzIjogIm9zbW8xdHpsMDM2MmxkdHNyYWRzZ240Z211OHBkODc5NHFqeTY2Y2w4cTJmZjQzZXZjbGd3ZDc3czJxdndsNiINCiAgfQ0KfQ==');
-    parseOphirDaoTreasury(ophirTreasuryMigalooAssets, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, osmosisHotWallet, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStaked.data, ampRoarAllianceRewards.data);
+    parseOphirDaoTreasury(ophirTreasuryMigalooAssets, ophirVaultMigalooAssets, migalooHotWallet, terraMSOpsWallet, terraMSOpsWalletampluna, terraMSOpsWalletbluna, osmosisHotWallet, allianceStakingAssets.data.data, allianceStakingRewards.data.data, allianceMigalooStakingAssets.data.data, allianceMigalooStakingRewards.data.data, stakedSailAmount.data, osmosisWWBondedAssets.data, ampRoarAllianceStaked.data);
     let treasuryValues = await caclulateAndAddTotalTreasuryValue(adjustDecimals(totalTreasuryAssets))
     // console.log(adjustDecimals(totalTreasuryAssets))
     // Cache the new data with the current timestamp
