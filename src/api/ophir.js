@@ -82,7 +82,8 @@ const tokenMappings = {
     'ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4': {symbol: 'usdc', decimals: 6}, //axlUsdc transfer/channel-6 crypto-org-chain-mainnet-1 channel-56
     'ibc/36A02FFC4E74DF4F64305130C3DFA1B06BEAC775648927AA44467C76A77AB8DB': {symbol: "whale", decimals: 6},
     'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB': {symbol: "lab", decimals: 6},
-    'ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834': {symbol: "shark", decimals: 6}
+    'ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834': {symbol: "shark", decimals: 6},
+    'ibc/E54A0C1E4A2A79FD4F92765F68E38939867C3DA36E2EA6BBB2CE81C43F4C8ADC': {symbol: "bWHALEt", decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -201,7 +202,13 @@ async function queryAccountBalances(accountAddress, chain) {
     return balances;
 }
 
+async function getOphirCirculatingSupply(){
+    cache.ophirStakedSupplyRaw = await queryAccountBalances('migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh', 'migaloo');
+    console.log(OPHIR_TOTAL_SUPPLY - (cache.ophirStakedSupplyRaw[0].amount/1000000))
+}
+
 async function fetchStatData() {
+    getOphirCirculatingSupply();
     const ophirCirculatingSupplyResponse = await fetchWithTimeout(
         'https://therealsnack.com/ophircirculatingsupply',
         5000,
@@ -214,7 +221,7 @@ async function fetchStatData() {
 
     cache.whiteWhalePoolRawData = await axios.get('https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/pools/migaloo');
     cache.ophirCirculatingSupply = ophirCirculatingSupplyResponse;
-    cache.ophirStakedSupplyRaw = await queryAccountBalances('migaloo1kv72vwfhq523yvh0gwyxd4nc7cl5pq32v9jt5w2tn57qtn57g53sghgkuh', 'migaloo');
+    
     cache.ophirInMine = await queryAccountBalances('migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh','migaloo');
     cache.ophirWhalePoolData = await queryContract('migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu', poolDataQueryMsg, 'migaloo');
     cache.whalewBtcPoolData = await queryContract('migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z', poolDataQueryMsg, 'migaloo');
@@ -699,7 +706,8 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
-        ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
+        ampWHALEt: (whiteWhalePoolFilteredData["ampWHALEt-ampWHALE"]) * (whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice),  
+        bWHALEt: (whiteWhalePoolFilteredData["bWHALEt-bWHALE"]) * (whiteWhalePoolFilteredData['bWHALE-WHALE'] * whalePrice),
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
@@ -966,7 +974,8 @@ async function getPrices(){
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
-        ampWHALEt: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,  //update when there is a ampWHALEt pool
+        ampWHALEt: (whiteWhalePoolFilteredData["ampWHALEt-ampWHALE"]) * (whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice),  
+        bWHALEt: (whiteWhalePoolFilteredData["bWHALEt-bWHALE"]) * (whiteWhalePoolFilteredData['bWHALE-WHALE'] * whalePrice),
         luna: statData?.coinPrices["luna"] || cache?.coinPrices['luna'],
         ash: whiteWhalePoolFilteredData['ASH-WHALE'] * whalePrice,
         ophirWhaleLp: ophirWhaleLpPrice,
