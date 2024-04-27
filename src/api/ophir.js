@@ -15,6 +15,7 @@ const BLUNA_CONSTANT = 1/0.844848;
 const AMPLUNA_ERIS_CONSTANT = 1.3356;
 const UNSOLD_OPHIR_FUZION_BONDS = 47175732.096;
 const LAB_DENOM = 'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB';
+const RSTK_DENOM = 'ibc/04FAC73DFF7F1DD59395948F2F043B0BBF978AD4533EE37E811340F501A08FFB';
 const SHARK_DENOM ="ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834";
 const USDC_DENOM = "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
 
@@ -252,7 +253,7 @@ async function fetchCoinPrices(){
         prices['lab'] = parseFloat(labPriceData);
     } catch (error) {
         console.error('Error fetching LAB price:', error);
-        prices['lab'] = 'Error fetching data';
+        // prices['lab'] = 'Error fetching data';
     }
 
     try {
@@ -261,7 +262,16 @@ async function fetchCoinPrices(){
         prices['shark'] = parseFloat(sharkPriceData);
     } catch (error) {
         console.error('Error fetching shark price:', error);
-        prices['shark'] = 'Error fetching data';
+        // prices['shark'] = 'Error fetching data';
+    }
+
+    try {
+        const rstkPriceResponse = await axios.get('https://sqsprod.osmosis.zone/tokens/prices?base=ibc/04FAC73DFF7F1DD59395948F2F043B0BBF978AD4533EE37E811340F501A08FFB');
+        const rstkPriceData = rstkPriceResponse.data[RSTK_DENOM][USDC_DENOM];
+        prices['rstk'] = parseFloat(rstkPriceData);
+    } catch (error) {
+        console.error('Error fetching shark price:', error);
+        // prices['rstk'] = 'Error fetching data';
     }
 
     // Fetch additional price data
@@ -1339,64 +1349,59 @@ const fetchVestingAccounts = async () => {
 };
 
 router.get('/seeker-vesting', async (req, res) => {
-    const { contractAddress } = req.query;
-    if (!contractAddress) {
-        return res.status(400).send('Contract address is required');
+    const { vestingAddress } = req.query;
+    if (!vestingAddress) {
+        return res.status(400).send('Vesting address is required');
     }
 
+    
+    const contractAddress = "migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq";
+    const queryMsg = {
+        vesting_accounts: {
+            limit: 30
+        }
+    };
+
     try {
-        const vestingQuery = {
-            available_amount: {
-                address: contractAddress
-            }
-        };
-        let vestingStart;
-        let vestingEnd;
-        const formattedJsonString = JSON.stringify(vestingQuery, null, 1); // This adds spaces in the JSON string
-        const encodedQuery = Buffer.from(formattedJsonString).toString('base64');
-        const vestingDetailsUrl = `https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/${encodedQuery}`;
-        let vestingDetails;
-        let matchingAccount;
-        let amount;
-        try {
-            const vestingAccountsData = await fetchVestingAccounts();
-            
-            if (vestingAccountsData) {
-                matchingAccount = vestingAccountsData.find(account => account.address === contractAddress);
-                if (matchingAccount) {
-                    // console.log(matchingAccount.info.schedules[0])
-                    const { start_point, end_point } = matchingAccount.info.schedules[0];
-                    vestingStart = start_point.time;
-                    vestingEnd = end_point.time;
-                    amount = end_point.amount / 1000000;
+        // const encodedMsg = Buffer.from(JSON.stringify(queryMsg)).toString('base64');
+        const response = await queryContract(contractAddress, queryMsg, "migaloo");
+        console.log(response)
+        // const response = await client.queryContractSmart(contractAddress, { query: encodedMsg });
+
+        // If there are more than 30 addresses, handle pagination
+        if (response.vesting_accounts.length === 30) {
+            const lastAddress = response.vesting_accounts[29].address;
+            const paginationQuery = {
+                vesting_accounts: {
+                    start_after: lastAddress,
+                    limit: 30,
+                    order_by: {
+                        desc: {}
+                    }
                 }
-            }
-
-            // const response = await axios.get(vestingDetailsUrl);
-            // console.log(response)
-            // console.log(vestingDetailsUrl)
-            // if (response.data && response.data.data) {
-            //     vestingDetails = {
-            //         amount: response.data.data / 1000000,
-            //         date: new Date().toISOString() // Assuming the current date as vesting date for simplicity
-            //     };
-            // }
-
-            // Fetch additional vesting accounts data
-            
-        } catch (error) {
-            console.error('Error fetching vesting details:', error);
-            vestingDetails = null;
+            };
+            // const encodedPaginationMsg = Buffer.from(JSON.stringify(paginationQuery)).toString('base64');
+            const paginationResponse = await queryContract(contractAddress, paginationQuery, "migaloo");
+            // Handle paginationResponse
+            console.log(paginationResponse)
         }
 
-        const response = {
+        // Find the matching account from the response
+        const matchingAccount = response.vesting_accounts.find(account => account.address === contractAddress);
+        if (!matchingAccount) {
+            return res.status(404).send('Account not found');
+        }
+
+        const { start_point, end_point } = matchingAccount.info.schedules[0];
+        const vestingDetails = {
             address: contractAddress,
-            amountVesting: amount,
-            vestingStart: vestingStart, // Assuming the date is stored in a readable format
-            vestingEnd: vestingEnd,
+            amountVesting: end_point.amount / 1000000,
+            vestingStart: new Date(start_point.time * 1000).toISOString(),
+            vestingEnd: new Date(end_point.time * 1000).toISOString(),
             amountClaimed: matchingAccount.info.released_amount / 1000000,
         };
-        res.json(response);
+
+        res.json(vestingDetails);
     } catch (error) {
         console.error('Error fetching vesting details:', error);
         res.status(500).send('Internal server error');
