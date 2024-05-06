@@ -1696,8 +1696,8 @@ router.get('/', (req, res) => {
 
 const cron = require('node-cron');
 let nextUpdateTime; 
-// Schedule the fetchDataAndStore function to run every 45 minutes
-cron.schedule('*/45 * * * * ', () => {
+// Schedule the fetchDataAndStore function to run every 4 hours
+cron.schedule('0 */4 * * *', () => {
     nextUpdateTime = getNextUpdateTime();
     console.log('Fetching data and storing...')
     fetchDataAndStore();
@@ -1707,10 +1707,7 @@ cron.schedule('*/45 * * * * ', () => {
 function getNextUpdateTime() {
     const now = new Date();
     const nextUpdateTime = new Date(now);
-    nextUpdateTime.setMinutes(Math.ceil(now.getMinutes() / 45) * 45);
-    if (nextUpdateTime <= now) {
-        nextUpdateTime.setMinutes(nextUpdateTime.getMinutes() + 45);
-    }
+    nextUpdateTime.setHours(now.getHours() + 4); // Set the update time to 4 hours later
     return nextUpdateTime;
 }
 
