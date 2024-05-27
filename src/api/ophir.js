@@ -285,7 +285,19 @@ async function fetchCoinPrices(){
 
     // Fetch additional price data
     const priceDataResponse = await axios.get("https://fd60qhijvtes7do71ou6moc14s.ingress.pcgameservers.com/api/prices");
-    const priceData = priceDataResponse.data.data;
+    const priceData = Object.keys(priceDataResponse.data.data).reduce((acc, key) => {
+        // Check if the key starts with "backbone-labs-staked-"
+        if (key.startsWith("backbone-labs-staked-")) {
+            // Replace "backbone-labs-staked-" with "b" and assign the value
+            const newKey = key.replace("backbone-labs-staked-", "b");
+            acc[newKey] = priceDataResponse.data.data[key];
+        } else {
+            // If it doesn't start with the prefix, keep the original key
+            acc[key] = priceDataResponse.data.data[key];
+        }
+        return acc;
+    }, {});
+
 
     // Map the fetched price data to the prices object
     for (const [key, value] of Object.entries(priceData)) {
@@ -301,6 +313,7 @@ async function fetchCoinPrices(){
         for (const rate of kujiraRates) {
             // Use the value from symbolDenomMap if it exists, otherwise use the original key
             let formattedKey = rate.denom.toLowerCase();
+
             // Change key to 'ampKuji' if formattedKey is 'ampkuji'
             if (formattedKey === 'ampkuji') {
                 formattedKey = 'ampKuji';
@@ -630,7 +643,7 @@ function addAllianceAssetsAndRewardsToTreasury(runeWallet, lunaAlliance, migaloo
                 combined['rune'] = {
                     balance: runeAmount,
                     rewards: '0',
-                    location: "Rune Wallet"
+                    location: "Rune Treasury"
                 };
             }
         });
@@ -735,7 +748,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         ...cache.coinPrices,
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
-        bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
+        // bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
@@ -747,7 +760,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
+        // bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
         ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
 
@@ -1003,7 +1016,7 @@ async function getPrices(){
         ...cache.coinPrices,
         whale: whalePrice,
         ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
-        bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
+        // bWhale: whiteWhalePoolFilteredData["bWHALE-WHALE"] * whalePrice,
         ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
@@ -1015,7 +1028,7 @@ async function getPrices(){
         whalewBtcLp: whalewBtcLpPrice,
         sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
         ampUSDC: statData?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT || cache?.coinPrices['usdc']*MUSDC_ERIS_CONSTANT,
-        bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
+        // bluna: statData?.coinPrices['luna']*BLUNA_CONSTANT || cache?.coinPrices['luna']*BLUNA_CONSTANT,
         ampLuna: statData?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT || cache?.coinPrices['luna']*AMPLUNA_ERIS_CONSTANT
     }
 
