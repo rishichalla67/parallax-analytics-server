@@ -649,10 +649,10 @@ function addAllianceAssetsAndRewardsToTreasury(runeWallet, lunaAlliance, migaloo
         });
     }
 
-    if (combined['bWhale']) {
-        combined['bwhale'] = combined['bWhale'];
-        delete combined['bWhale'];
-    }
+    // if (combined['bWhale']) {
+    //     combined['bwhale'] = combined['bWhale'];
+    //     delete combined['bWhale'];
+    // }
     return combined;
 }
 
