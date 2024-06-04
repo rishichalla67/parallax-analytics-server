@@ -275,6 +275,15 @@ async function fetchCoinPrices(){
     }
 
     try {
+        const dogPriceResponse = await axios.get('https://www.fxempire.com/api/v1/en/crypto-coin/markets?slug=bridged-dog-go-to-the-moon&page=1&size=6');
+        const dogPriceData = dogPriceResponse.data[0].converted_last.usd;
+        prices['dog'] = parseFloat(dogPriceData);
+    } catch (error) {
+        console.error('Error fetching DOG price:', error);
+        prices['dog'] = 'Error fetching data';
+    }
+
+    try {
         const rstkPriceResponse = await axios.get('https://sqsprod.osmosis.zone/tokens/prices?base=ibc/04FAC73DFF7F1DD59395948F2F043B0BBF978AD4533EE37E811340F501A08FFB');
         const rstkPriceData = rstkPriceResponse.data[RSTK_DENOM][USDC_DENOM];
         prices['rstk'] = parseFloat(rstkPriceData);
@@ -649,6 +658,13 @@ function addAllianceAssetsAndRewardsToTreasury(runeWallet, lunaAlliance, migaloo
         });
     }
 
+    // Add 'dog' to combined with the location being "Bitcoin Treasury"
+    combined['dog'] = {
+        balance: 889810, 
+        rewards: '0',
+        location: "Bitcoin Treasury"
+    };
+
     // if (combined['bWhale']) {
     //     combined['bwhale'] = combined['bWhale'];
     //     delete combined['bWhale'];
@@ -946,7 +962,8 @@ async function getTreasuryAssets(){
     const ophirVaultMigalooAssets = await queryChainBalances(migalooRPC, 'migaloo14gu2xfk4m3x64nfkv9cvvjgmv2ymwhps7fwemk29x32k2qhdrmdsp9y2wu');
     const migalooHotWallet = await queryChainBalances(migalooRPC, 'migaloo19gc2kclw3ynjxl7wsddm5p08r5hu8a0gvzc4t3');
     const runeWallet = await axios.get('https://midgard.ninerealms.com/v2/balance/thor17fm523ke5x32wk0w7ytmf50lc0052vaf2rj4uf');
-    const terraMSOpsWallet = await queryChainBalances(terraRPC, 'terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3')
+    const terraMSOpsWallet = await queryChainBalances(terraRPC, 'terra1hg55djaycrwgm0vqydul3ad3k64jn0jatnuh9wjxcxwtxrs6mxzshxqjf3');
+    const terraCrossChainWallet = await queryChainBalances(terraRPC, 'terra1tjf95qej7fmckc927s7wckmxggfth23unp4dnl49xaxec5wea9nq9ys30r');
     const terraMSOpsWalletampluna = await queryContract('terra1ecgazyd0waaj3g7l9cmy5gulhxkps2gmxu9ghducvuypjq68mq2s5lvsct', stakeQueryMsg, 'terra'); // ampluna
     const terraMSOpsWalletbluna = await queryContract('terra17aj4ty4sz4yhgm08na8drc0v03v2jwr3waxcqrwhajj729zhl7zqnpc0ml', stakeQueryMsg, 'terra'); // bluna
     const osmosisHotWallet = await queryChainBalances(osmosisRPC, 'osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf')
