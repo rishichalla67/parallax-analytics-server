@@ -660,7 +660,7 @@ function addAllianceAssetsAndRewardsToTreasury(runeWallet, lunaAlliance, migaloo
 
     // Add 'dog' to combined with the location being "Bitcoin Treasury"
     combined['dog'] = {
-        balance: 889810, 
+        balance: 889806, 
         rewards: '0',
         location: "Bitcoin Treasury"
     };
