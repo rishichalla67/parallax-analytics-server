@@ -9,8 +9,10 @@ const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR = "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir"; 
 const LUNA = 'ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8';
-const AMPROAR_ERIS_CONSTANT = 1.0207;
-const MUSDC_ERIS_CONSTANT = 1.0224;
+const AMPROAR_ERIS_CONSTANT = 1.0326;
+const MOAR_ERIS_CONSTANT = 1.2141;
+const MUSDC_ERIS_CONSTANT = 1.0255;
+const AMPBTC_ERIS_CONSTANT = 1.0232;
 const BLUNA_CONSTANT = 1/0.844848;
 const AMPLUNA_ERIS_CONSTANT = 1.3356;
 const UNSOLD_OPHIR_FUZION_BONDS = 47175732.096;
@@ -85,7 +87,9 @@ const tokenMappings = {
     'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB': {symbol: "lab", decimals: 6},
     'ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834': {symbol: "shark", decimals: 6},
     'ibc/E54A0C1E4A2A79FD4F92765F68E38939867C3DA36E2EA6BBB2CE81C43F4C8ADC': {symbol: "bWHALEt", decimals: 6},
-    'ibc/1480B8FD20AD5FCAE81EA87584D269547DD4D436843C1D20F15E00EB64743EF4': {symbol: "akt", decimals: 6}
+    'ibc/1480B8FD20AD5FCAE81EA87584D269547DD4D436843C1D20F15E00EB64743EF4': {symbol: "akt", decimals: 6},
+    'factory/migaloo1pll95yfcnxd5pkkrcsad63l929m4ehk4c46fpqqp3c2d488ca0csc220d0/ampBTC': {symbol: "ampBTC", decimals: 8},
+    'ibc/DAB7EEB14B61CA588F013729604B01017A5FE0E860E1CCBAA5A1A5D9763737D6': {symbol: "moar", decimals: 6}
   };
 
 if (admin.apps.length === 0) {
@@ -342,6 +346,9 @@ async function fetchCoinPrices(){
     prices.wBTCaxl = prices['wBTC.axl'];
     delete prices['wBTC.axl'];
 
+    prices['ampBTC'] = prices['wBTC'] * AMPBTC_ERIS_CONSTANT;
+
+    prices['moar'] = prices['ampRoar'] * MOAR_ERIS_CONSTANT;
     // console.log(prices)
     return prices;
 }
