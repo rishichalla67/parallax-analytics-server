@@ -748,14 +748,14 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     let sailWhaleLpData = 0;
     let ampKujiPrice = 0;
     let kujiPrice = 0;
-    const ophirlpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
-    const whalelpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const ophirlpAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+    const whalelpAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
 
-    const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
-    const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const bWhalelpAmount = parseFloat(cache?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
+    const whalelpAmount_b = parseFloat(cache?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
 
-    const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
-    const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const ampWhalelpAmount = parseFloat(cache?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
+    const whalelpAmount_amp = parseFloat(cache?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
 
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     // console.log(statData?.whiteWhalePoolRawData.data.data);
@@ -854,26 +854,20 @@ router.get('/stats', async (req, res) => {
     try {
         let statData;
         if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 250 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
-            statData = await fetchStatData();
+            await fetchStatData();
         }
         let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
-        console.log(statData.ophirWhalePoolData)
+        // console.log(statData.ophirWhalePoolData)
 
-        const ophirAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
-        const whaleAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+        const ophirAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+        const whaleAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
         
-        const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
-        const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
-    
-        const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
-        const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
-    
-        try {
-            whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data.data);
-        } catch (error) {
-            console.error('Error filtering White Whale Pool data:', error);
-            whiteWhalePoolFilteredData = {}; // Default to empty object to prevent further errors
-        }
+        // try {
+        //     whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data.data);
+        // } catch (error) {
+        //     console.error('Error filtering White Whale Pool data:', error);
+        //     whiteWhalePoolFilteredData = {}; // Default to empty object to prevent further errors
+        // }
         try {
             ophirStakedSupply = getMigalooContractBalance(cache?.ophirStakedSupplyRaw);
         } catch (error) {
@@ -1039,13 +1033,13 @@ async function getPrices(){
     if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
     }
-    const ophirlpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
-    const whalelpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
-    const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
-    const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const ophirlpAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+    const whalelpAmount = parseFloat(cache?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const bWhalelpAmount = parseFloat(cache?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
+    const whalelpAmount_b = parseFloat(cache?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
 
-    const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
-    const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const ampWhalelpAmount = parseFloat(cache?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
+    const whalelpAmount_amp = parseFloat(cache?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
 
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'] || 0;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
