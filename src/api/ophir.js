@@ -20,6 +20,8 @@ const LAB_DENOM = 'factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB';
 const RSTK_DENOM = 'ibc/04FAC73DFF7F1DD59395948F2F043B0BBF978AD4533EE37E811340F501A08FFB';
 const SHARK_DENOM ="ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834";
 const USDC_DENOM = "ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4";
+const AMP_WHALE = 'factory/migaloo1436kxs0w2es6xlqpp9rd35e3d0cjnw4sv8j3a7483sgks29jqwgshqdky4/ampWHALE';
+const B_WHALE = 'factory/migaloo1mf6ptkssddfmxvhdx0ech0k03ktp6kf9yk59renau2gvht3nq2gqdhts4u/boneWhale';
 
 const cache = {
     lastFetch: 0,
@@ -230,6 +232,8 @@ async function fetchStatData() {
     
     cache.ophirInMine = await queryAccountBalances('migaloo1dpchsx70fe6gu9ljtnknsvd2dx9u7ztrxz9dr6ypfkj4fvv0re6qkdrwkh','migaloo');
     cache.ophirWhalePoolData = await queryContract('migaloo1p5adwk3nl9pfmjjx6fu9mzn4xfjry4l2x086yq8u8sahfv6cmuyspryvyu', poolDataQueryMsg, 'migaloo');
+    cache.bWhaleWhalePoolData = await queryContract('migaloo1dg5jrt89nddtymjx5pzrvdvdt0m4zl3l2l3ytunl6a0kqd7k8hss594wy6', poolDataQueryMsg, 'migaloo');
+    cache.ampWhaleWhalePoolData = await queryContract('migaloo1ull9s4el2pmkdevdgrjt6pwa4e5xhkda40w84kghftnlxg4h3knqpm5u3n', poolDataQueryMsg, 'migaloo');
     cache.whalewBtcPoolData = await queryContract('migaloo1axtz4y7jyvdkkrflknv9dcut94xr5k8m6wete4rdrw4fuptk896su44x2z', poolDataQueryMsg, 'migaloo');
     cache.osmosisMainDaoData = await queryAccountBalances('osmo1esa9vpyfnmew4pg4zayyj0nlhgychuv5xegraqwfyyfw4ral80rqn7sdxf', 'osmosis');
     cache.coinPrices = await fetchCoinPrices();
@@ -744,6 +748,15 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     let sailWhaleLpData = 0;
     let ampKujiPrice = 0;
     let kujiPrice = 0;
+    const ophirlpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+    const whalelpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+
+    const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
+    const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+
+    const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
+    const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'];
     // console.log(statData?.whiteWhalePoolRawData.data.data);
     // console.log(statData?.ophirWhalePoolData.data)
@@ -774,9 +787,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     let prices = {
         ...cache.coinPrices,
         whale: whalePrice,
-        ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
+        ophir: ((whalelpAmount / 1000000) * cache.coinPrices["whale"])/(ophirlpAmount/1000000),
         bWhale: statData?.coinPrices['bwhale'] || cache?.coinPrices['bwhale'],
-        ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
+        ampWhale: ((whalelpAmount_amp / 1000000) * cache.coinPrices["whale"])/(ampWhalelpAmount/1000000),
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
         ampWHALEt: (whiteWhalePoolFilteredData["ampWHALEt-ampWHALE"]) * (whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice),  
@@ -839,10 +852,22 @@ function parseOphirDaoTreasury(runeWallet, migalooTreasuryData, ophirVaultMigalo
  
 router.get('/stats', async (req, res) => {
     try {
+        let statData;
         if (Date.now() - cache.lastFetch > CACHE_IN_MINUTES * 250 * 1000) { // Ensure CACHE_IN_MINUTES is converted to milliseconds
-            await fetchStatData();
+            statData = await fetchStatData();
         }
         let whiteWhalePoolFilteredData, ophirStakedSupply, ophirInMine, ophirPrice;
+        console.log(statData.ophirWhalePoolData)
+
+        const ophirAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+        const whaleAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+        
+        const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
+        const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    
+        const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
+        const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    
         try {
             whiteWhalePoolFilteredData = filterPoolsWithPrice(cache.whiteWhalePoolRawData.data.data);
         } catch (error) {
@@ -862,7 +887,7 @@ router.get('/stats', async (req, res) => {
             ophirInMine = 0; // Default to 0 to prevent further errors
         }
         try {
-            ophirPrice = whiteWhalePoolFilteredData["OPHIR-WHALE"] * cache.coinPrices["whale"];
+            ophirPrice = ((whaleAmount / 1000000) * cache.coinPrices["whale"])/(ophirAmount/1000000);
         } catch (error) {
             console.error('Error calculating Ophir Price:', error);
             ophirPrice = 0; // Default to 0 to prevent further errors
@@ -1014,6 +1039,14 @@ async function getPrices(){
     if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
         statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
     }
+    const ophirlpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === OPHIR).amount);
+    const whalelpAmount = parseFloat(statData?.ophirWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+    const bWhalelpAmount = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === B_WHALE).amount);
+    const whalelpAmount_b = parseFloat(statData?.bWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+
+    const ampWhalelpAmount = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === AMP_WHALE).amount);
+    const whalelpAmount_amp = parseFloat(statData?.ampWhaleWhalePoolData.assets.find(asset => asset.info.native_token.denom === 'uwhale').amount);
+
     const whalePrice = statData?.coinPrices['whale'] || cache?.coinPrices['whale'] || 0;
     const whiteWhalePoolFilteredData = filterPoolsWithPrice(statData?.whiteWhalePoolRawData.data.data || cache.whiteWhalePoolRawData.data.data) || 0;
     const ophirWhaleLpPrice = getLPPrice(statData?.ophirWhalePoolData || cache?.ophirWhalePoolData, whiteWhalePoolFilteredData["OPHIR-WHALE"], whalePrice);
@@ -1039,13 +1072,12 @@ async function getPrices(){
         console.error('Error fetching Kuji Price:', error);
     }
 
-
     let prices = {
         ...cache.coinPrices,
         whale: whalePrice,
-        ophir: whiteWhalePoolFilteredData["OPHIR-WHALE"] * whalePrice,
+        ophir: ((whalelpAmount / 1000000) * cache.coinPrices["whale"])/(ophirlpAmount/1000000),
         bWhale: statData?.coinPrices['bwhale'] || cache?.coinPrices['bwhale'],
-        ampWhale: whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice,
+        ampWhale: ((whalelpAmount_amp / 1000000) * cache.coinPrices["whale"])/(ampWhalelpAmount/1000000),
         wBTC: statData?.coinPrices['wBTC']?.usd || cache?.coinPrices['wBTC'],
         wBTCaxl: statData?.coinPrices['wBTCaxl']?.usd || cache?.coinPrices['wBTCaxl'],
         ampWHALEt: (whiteWhalePoolFilteredData["ampWHALEt-ampWHALE"]) * (whiteWhalePoolFilteredData['ampWHALE-WHALE'] * whalePrice),  
