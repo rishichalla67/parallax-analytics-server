@@ -1002,7 +1002,9 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     ophir:
       ((whalelpAmount / 1000000) * cache.coinPrices["whale"]) /
       (ophirlpAmount / 1000000),
-    bWhale: statData?.coinPrices["bwhale"] || cache?.coinPrices["bwhale"],
+    bWhale:
+      ((whalelpAmount_b / 1000000) * cache.coinPrices["whale"]) /
+      (bWhalelpAmount / 1000000),
     ampWhale:
       ((whalelpAmount_amp / 1000000) * cache.coinPrices["whale"]) /
       (ampWhalelpAmount / 1000000),
@@ -1454,7 +1456,9 @@ async function getPrices() {
     ophir:
       ((whalelpAmount / 1000000) * cache.coinPrices["whale"]) /
       (ophirlpAmount / 1000000),
-    bWhale: statData?.coinPrices["bwhale"] || cache?.coinPrices["bwhale"],
+    bWhale:
+      ((whalelpAmount_b / 1000000) * cache.coinPrices["whale"]) /
+      (bWhalelpAmount / 1000000),
     ampWhale:
       ((whalelpAmount_amp / 1000000) * cache.coinPrices["whale"]) /
       (ampWhalelpAmount / 1000000),
