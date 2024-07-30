@@ -69,6 +69,33 @@ let treasuryBalances,
   prices;
 const CACHE_IN_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+const kujiraGhostContracts = {
+  kujira143fwcudwy0exd6zd3xyvqt2kae68ud6n8jqchufu7wdg5sryd4lqtlvvep: {
+    contract: "xkuji",
+  },
+  kujira1jelmu9tdmr6hqg0d6qw4g6c9mwrexrzuryh50fwcavcpthp5m0uq20853h: {
+    contract: "xusdc",
+  },
+  kujira1w4yaama77v53fp0f9343t9w2f932z526vj970n2jv5055a7gt92sxgwypf: {
+    contract: "xusk",
+  },
+  kujira1xhxefc8v3tt0n75wpzfqcrukzyfneyttdppqst84zzdxnf223m2qm4g5at: {
+    contract: "xwbtc",
+  },
+  kujira1e224c8ry0nuun5expxm00hmssl8qnsjkd02ft94p3m2a33xked2qypgys3: {
+    contract: "xaxlusdc",
+  },
+  kujira195zfkf8uzufmwhc4zzclythlh43m2rme2rd3rlstt6c7yzw386xqskc02y: {
+    contract: "xlunc",
+  },
+  kujira1ya42knfcsvy6eztegsn3hz7zpjvhzn05ge85xa2dy2zrjeul9hnspp3c06: {
+    contract: "xmnta",
+  },
+  kujira1e6kvcdpxtu30t8x9sx0k692tln9z636gyu8sqf6w5fm5z3jrvjjqc8qfkr: {
+    contract: "xatom",
+  },
+};
+
 const tokenMappings = {
   "ibc/517E13F14A1245D4DE8CF467ADD4DA0058974CDCC880FA6AE536DBCA1D16D84E": {
     symbol: "bWhale",
@@ -2237,6 +2264,40 @@ router.get("/nft-stats/runestone", async (req, res) => {
   } catch (error) {
     console.error("Error fetching Runestone stats:", error);
     res.status(500).send("Internal server error");
+  }
+});
+
+router.get("/kujiraGhostPrices", async (req, res) => {
+  const { assets } = req.query;
+  if (!assets) {
+    return res.status(400).send("Assets parameter is required");
+  }
+
+  try {
+    let pricesObj = {};
+    const assetsArray = assets.split(","); // Assuming assets are comma-separated
+    for (const asset of assetsArray) {
+      const assetKey = Object.keys(kujiraGhostContracts).find(
+        (key) => kujiraGhostContracts[key].contract === `x${asset.trim()}`
+      );
+      if (assetKey) {
+        const response = await axios.get(
+          `https://api.kujira.app/api/trades?contract=${assetKey}`
+        );
+        const data = response.data;
+        if (data.trades && data.trades.length > 0) {
+          pricesObj[asset] = data.trades[0].trade_price;
+        } else {
+          pricesObj[asset] = "No trade data available";
+        }
+      } else {
+        pricesObj[asset] = "Asset not found";
+      }
+    }
+    return res.json(pricesObj);
+  } catch (error) {
+    console.error(`Error fetching ghost prices for assets - ${error}`);
+    return res.status(500).send("Internal Server Error");
   }
 });
 
