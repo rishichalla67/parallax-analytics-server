@@ -475,7 +475,6 @@ async function fetchCoinPrices() {
     prices["roar"] = parseFloat(roarPriceData);
   } catch (error) {
     console.error("Error fetching ROAR price:", error);
-    // prices['rstk'] = 'Error fetching data';
   }
 
   // Fetch additional price data
@@ -593,6 +592,9 @@ function getWhalewBtcLPPrice(data, whalePrice, wBTCPrice) {
 
   let whaleValue = assets["whale"] * whalePrice;
   let wbtcValue = assets["wBTC"] * wBTCPrice;
+  console.log("Whale Value: ", whaleValue);
+  console.log("wBTC Value: ", wbtcValue);
+  console.log("Total Share: ", totalShare);
   return (whaleValue + wbtcValue) / totalShare;
 }
 
@@ -1545,7 +1547,7 @@ async function getPrices() {
     getWhalewBtcLPPrice(
       statData?.whalewBtcPoolData || cache?.whalewBtcPoolData,
       whalePrice,
-      statData?.coinPrices["wBTC"]?.usd || cache?.coinPrices["wBTC"]
+      statData?.coinPrices["wbtc"]?.usd || cache?.coinPrices["wbtc"]
     ) || 0;
   try {
     const response = await axios.get(
