@@ -1290,7 +1290,11 @@ router.get("/treasury", async (req, res) => {
 });
 
 router.get("/prices", async (req, res) => {
-  res.json(await getPrices());
+  const prices = await getPrices();
+  const sortedPrices = Object.fromEntries(
+    Object.entries(prices).sort(([a], [b]) => a.localeCompare(b))
+  );
+  res.json(sortedPrices);
 });
 
 // async function querySmartContractStakedBalance(rpcEndpoint, contractAddress, query) {
