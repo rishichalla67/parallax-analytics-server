@@ -9,6 +9,8 @@ const admin = require("firebase-admin");
 const OPHIR_TOTAL_SUPPLY = 1000000000;
 const OPHIR =
   "factory/migaloo1t862qdu9mj5hr3j727247acypym3ej47axu22rrapm4tqlcpuseqltxwq5/ophir";
+const WBTC =
+  "ibc/6E5BF71FE1BEBBD648C8A7CB7A790AEF0081120B2E5746E6563FC95764716D61";
 const LUNA =
   "ibc/4627AD2524E3E0523047E35BB76CC90E37D9D57ACF14F0FCBCEB2480705F3CB8";
 const AMPROAR_ERIS_CONSTANT = 1.0326;
@@ -16,7 +18,11 @@ const MOAR_ERIS_CONSTANT = 1.2141;
 const MUSDC_ERIS_CONSTANT = 1.0255;
 const AMPBTC_ERIS_CONSTANT = 1.0232;
 const BLUNA_CONSTANT = 1 / 0.844848;
+const BOSMO_CONSTANT = 1 / 0.956234;
+const AMPOSMO_ERIS_CONSTANT = 1.1318;
 const AMPLUNA_ERIS_CONSTANT = 1.3356;
+const AMPWHALET_ERIS_CONSTANT = 1.6386;
+const BWHALET_CONSTANT = 1.5317;
 const UNSOLD_OPHIR_FUZION_BONDS = 47175732.096;
 const LAB_DENOM = "factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB";
 const RSTK_DENOM =
@@ -359,6 +365,11 @@ async function fetchStatData() {
     poolDataQueryMsg,
     "migaloo"
   );
+  cache.ophirWbtcPoolData = await queryContract(
+    "migaloo154k8ta3n0eduqrkr657f0kaj8yc89rczjpznxwnrnfvdlnjkxkjq0mv55f",
+    poolDataQueryMsg,
+    "migaloo"
+  );
   cache.bWhaleWhalePoolData = await queryContract(
     "migaloo1dg5jrt89nddtymjx5pzrvdvdt0m4zl3l2l3ytunl6a0kqd7k8hss594wy6",
     poolDataQueryMsg,
@@ -513,6 +524,15 @@ async function fetchCoinPrices() {
   prices["ampBTC"] = prices["wBTC"] * AMPBTC_ERIS_CONSTANT;
 
   prices["moar"] = prices["ampRoar"] * MOAR_ERIS_CONSTANT;
+
+  prices["ampOsmo"] = prices["osmo"] * AMPOSMO_ERIS_CONSTANT;
+
+  prices["bOsmo"] = prices["osmo"] * BOSMO_CONSTANT;
+
+  prices["ampWhaleT"] = prices["whale"] * AMPWHALET_ERIS_CONSTANT;
+
+  prices["bWhaleT"] = prices["whale"] * BWHALET_CONSTANT;
+
   // console.log(prices)
   return prices;
 }
@@ -561,6 +581,27 @@ function getWhalewBtcLPPrice(data, whalePrice, wBTCPrice) {
   let whaleValue = assets["whale"] * whalePrice;
   let wbtcValue = assets["wBTC"] * wBTCPrice;
   return (whaleValue + wbtcValue) / totalShare;
+}
+
+function getOphirwBtcLPPrice(data, ophirPrice, wBTCPrice) {
+  // Extract total share
+  const totalShare = data?.total_share / Math.pow(10, 6);
+  // console.log(totalShare)
+  // Process each asset
+  const assets = data.assets.reduce((acc, asset) => {
+    // console.log(tokenMappings[asset.info.native_token.denom].symbol)
+    acc[tokenMappings[asset.info.native_token.denom].symbol] =
+      Number(asset.amount) /
+      Math.pow(
+        10,
+        getDecimalForSymbol(tokenMappings[asset.info.native_token.denom].symbol)
+      );
+    return acc;
+  }, {});
+
+  let ophirValue = assets["ophir"] * ophirPrice;
+  let wbtcValue = assets["wBTC"] * wBTCPrice;
+  return (ophirValue + wbtcValue) / totalShare;
 }
 
 function getSailPriceFromLp(data, whalePrice) {
@@ -950,9 +991,21 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
       (asset) => asset.info.native_token.denom === OPHIR
     ).amount
   );
+
+  const ophirlpAmountForWBTC = parseFloat(
+    cache?.ophirWbtcPoolData.assets.find(
+      (asset) => asset.info.native_token.denom === OPHIR
+    ).amount
+  );
   const whalelpAmount = parseFloat(
     cache?.ophirWhalePoolData.assets.find(
       (asset) => asset.info.native_token.denom === "uwhale"
+    ).amount
+  );
+
+  const wBTClpAmount = parseFloat(
+    cache?.ophirWbtcPoolData.assets.find(
+      (asset) => asset.info.native_token.denom === WBTC
     ).amount
   );
 
@@ -990,11 +1043,19 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
         (ophirlpAmount / 1000000),
       whalePrice
     ) || 0;
+
+  const ophirWbtcLpPrice =
+    getOphirwBtcLPPrice(
+      statData?.ophirWbtcPoolData || cache?.ophirWbtcPoolData,
+      ((wBTClpAmount / 100000000) * cache.coinPrices["wbtc"]) /
+        (ophirlpAmountForWBTC / 1000000),
+      statData?.coinPrices["wbtc"]?.usd || cache?.coinPrices["wbtc"]
+    ) || 0;
   const whalewBtcLpPrice =
     getWhalewBtcLPPrice(
       statData?.whalewBtcPoolData || cache?.whalewBtcPoolData,
       whalePrice,
-      statData?.coinPrices["wBTC"]?.usd || cache?.coinPrices["wBTC"]
+      statData?.coinPrices["wbtc"]?.usd || cache?.coinPrices["wbtc"]
     ) || 0;
   try {
     const response = await axios.get(
@@ -1048,6 +1109,7 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     // ash: whiteWhalePoolFilteredData["ASH-WHALE"] * whalePrice,
     ophirWhaleLp: ophirWhaleLpPrice,
     whalewBtcLp: whalewBtcLpPrice,
+    ophirWbtcLp: ophirWbtcLpPrice,
     sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
     ampUSDC:
       statData?.coinPrices["usdc"] * MUSDC_ERIS_CONSTANT ||
@@ -1407,9 +1469,20 @@ async function getPrices() {
       (asset) => asset.info.native_token.denom === OPHIR
     ).amount
   );
+  const ophirlpAmountForWBTC = parseFloat(
+    cache?.ophirWbtcPoolData.assets.find(
+      (asset) => asset.info.native_token.denom === OPHIR
+    ).amount
+  );
   const whalelpAmount = parseFloat(
     cache?.ophirWhalePoolData.assets.find(
       (asset) => asset.info.native_token.denom === "uwhale"
+    ).amount
+  );
+
+  const wBTClpAmount = parseFloat(
+    cache?.ophirWbtcPoolData.assets.find(
+      (asset) => asset.info.native_token.denom === WBTC
     ).amount
   );
   const bWhalelpAmount = parseFloat(
@@ -1443,6 +1516,13 @@ async function getPrices() {
       ((whalelpAmount / 1000000) * cache.coinPrices["whale"]) /
         (ophirlpAmount / 1000000),
       whalePrice
+    ) || 0;
+  const ophirWbtcLpPrice =
+    getOphirwBtcLPPrice(
+      statData?.ophirWbtcPoolData || cache?.ophirWbtcPoolData,
+      ((wBTClpAmount / 100000000) * cache.coinPrices["wbtc"]) /
+        (ophirlpAmountForWBTC / 1000000),
+      statData?.coinPrices["wbtc"]?.usd || cache?.coinPrices["wbtc"]
     ) || 0;
   const whalewBtcLpPrice =
     getWhalewBtcLPPrice(
@@ -1502,6 +1582,7 @@ async function getPrices() {
     // ash: whiteWhalePoolFilteredData["ASH-WHALE"] * whalePrice,
     ophirWhaleLp: ophirWhaleLpPrice,
     whalewBtcLp: whalewBtcLpPrice,
+    ophirWbtcLp: ophirWbtcLpPrice,
     sail: getSailPriceFromLp(sailWhaleLpData.data, whalePrice),
     ampUSDC:
       statData?.coinPrices["usdc"] * MUSDC_ERIS_CONSTANT ||
