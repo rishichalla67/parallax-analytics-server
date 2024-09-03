@@ -27,6 +27,8 @@ const UNSOLD_OPHIR_FUZION_BONDS = 47175732.096;
 const LAB_DENOM = "factory/osmo17fel472lgzs87ekt9dvk0zqyh5gl80sqp4sk4n/LAB";
 const RSTK_DENOM =
   "ibc/04FAC73DFF7F1DD59395948F2F043B0BBF978AD4533EE37E811340F501A08FFB";
+const ROAR_DENOM =
+  "ibc/98BCD43F190C6960D0005BC46BB765C827403A361C9C03C2FF694150A30284B0";
 const SHARK_DENOM =
   "ibc/64D56DF9EC69BE554F49EBCE0199611062FF1137EF105E2F645C1997344F3834";
 const USDC_DENOM =
@@ -461,7 +463,18 @@ async function fetchCoinPrices() {
     const rstkPriceData = rstkPriceResponse.data[RSTK_DENOM][USDC_DENOM];
     prices["rstk"] = parseFloat(rstkPriceData);
   } catch (error) {
-    console.error("Error fetching shark price:", error);
+    console.error("Error fetching RSTK price:", error);
+    // prices['rstk'] = 'Error fetching data';
+  }
+
+  try {
+    const roarPriceResponse = await axios.get(
+      "https://sqsprod.osmosis.zone/tokens/prices?base=ibc/98BCD43F190C6960D0005BC46BB765C827403A361C9C03C2FF694150A30284B0"
+    );
+    const roarPriceData = roarPriceResponse.data[ROAR_DENOM][USDC_DENOM];
+    prices["roar"] = parseFloat(roarPriceData);
+  } catch (error) {
+    console.error("Error fetching ROAR price:", error);
     // prices['rstk'] = 'Error fetching data';
   }
 
@@ -521,7 +534,7 @@ async function fetchCoinPrices() {
   prices.wBTCaxl = prices["wBTC.axl"];
   delete prices["wBTC.axl"];
 
-  prices["ampBTC"] = prices["wBTC"] * AMPBTC_ERIS_CONSTANT;
+  prices["ampBTC"] = prices["wbtc"] * AMPBTC_ERIS_CONSTANT;
 
   prices["moar"] = prices["ampRoar"] * MOAR_ERIS_CONSTANT;
 
@@ -1591,6 +1604,9 @@ async function getPrices() {
     ampLuna:
       statData?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT ||
       cache?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT,
+    bLuna:
+      statData?.coinPrices["luna"] * BLUNA_CONSTANT ||
+      cache?.coinPrices["luna"] * BLUNA_CONSTANT,
   };
 
   return prices;
