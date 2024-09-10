@@ -2010,51 +2010,54 @@ router.get("/seeker-vesting", async (req, res) => {
 
   const contractAddress =
     "migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq";
-  const queryMsg = {
-    vesting_accounts: {
-      limit: 30,
-    },
-  };
+  const limit = 30;
 
   try {
-    // const encodedMsg = Buffer.from(JSON.stringify(queryMsg)).toString('base64');
-    const response = await queryContract(contractAddress, queryMsg, "migaloo");
-    console.log(response);
-    // const response = await client.queryContractSmart(contractAddress, { query: encodedMsg });
+    let allVestingAccounts = [];
+    let startAfter = null;
+    let hasMore = true;
 
-    // If there are more than 30 addresses, handle pagination
-    if (response.vesting_accounts.length === 30) {
-      const lastAddress = response.vesting_accounts[29].address;
-      const paginationQuery = {
+    while (hasMore) {
+      const queryMsg = {
         vesting_accounts: {
-          start_after: lastAddress,
-          limit: 30,
-          order_by: {
-            desc: {},
-          },
+          limit: limit,
+          ...(startAfter && { start_after: startAfter }),
         },
       };
-      // const encodedPaginationMsg = Buffer.from(JSON.stringify(paginationQuery)).toString('base64');
-      const paginationResponse = await queryContract(
+
+      const response = await queryContract(
         contractAddress,
-        paginationQuery,
+        queryMsg,
         "migaloo"
       );
-      // Handle paginationResponse
-      console.log(paginationResponse);
+      console.log(response);
+
+      allVestingAccounts = [
+        ...allVestingAccounts,
+        ...response.vesting_accounts,
+      ];
+
+      if (response.vesting_accounts.length < limit) {
+        hasMore = false;
+      } else {
+        startAfter =
+          response.vesting_accounts[response.vesting_accounts.length - 1]
+            .address;
+      }
     }
 
-    // Find the matching account from the response
-    const matchingAccount = response.vesting_accounts.find(
-      (account) => account.address === contractAddress
+    // Find the matching account from all fetched accounts
+    const matchingAccount = allVestingAccounts.find(
+      (account) => account.address === vestingAddress
     );
+
     if (!matchingAccount) {
       return res.status(404).send("Account not found");
     }
 
     const { start_point, end_point } = matchingAccount.info.schedules[0];
     const vestingDetails = {
-      address: contractAddress,
+      address: vestingAddress,
       amountVesting: end_point.amount / 1000000,
       vestingStart: new Date(start_point.time * 1000).toISOString(),
       vestingEnd: new Date(end_point.time * 1000).toISOString(),
