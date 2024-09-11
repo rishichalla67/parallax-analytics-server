@@ -2223,7 +2223,7 @@ function processRedeemTransactions(transactions) {
 
   return {
     summary: redeemSummary,
-    uniqueRedeemersCount: uniqueRedeemers.size,
+    uniqueRedeemers: uniqueRedeemers.size,
   };
 }
 
@@ -2232,13 +2232,13 @@ router.get("/redeemAnalytics", async (req, res) => {
     "migaloo10p9ttf976c4q7czknd3z7saejsmx0uwvy4lgzyg09jmtq6up9e3s3wga9m";
   try {
     const transactions = await fetchRedeemTransactions(redeemContractAddress);
-    const { summary, uniqueRedeemersCount } =
+    const { summary, uniqueRedeemers } =
       processRedeemTransactions(transactions);
 
     res.json({
       redeemSummary: summary,
-      uniqueRedeemersCount,
-      transactionCount: transactions.length,
+      uniqueRedeemers,
+      totalRedemptions: transactions.length,
     });
   } catch (error) {
     console.error("An error occurred:", error);
