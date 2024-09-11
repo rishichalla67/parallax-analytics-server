@@ -2103,14 +2103,35 @@ async function fetchRedeemTransactions(accountId, page = 1, transactions = []) {
           tx.tx.body.memo &&
           tx.tx.body.memo.includes("Fee amount in OPHIR")
       )
-      .map((tx) => ({
-        tx: {
-          ...tx.tx.body,
-          txHash: tx.txhash,
-        },
-        memo: tx.tx.body.memo,
-        timestamp: tx.timestamp,
-      }));
+      .map((tx) => {
+        // Extract coin_received event information
+        let coinReceivedAmount = null;
+        if (tx.logs && tx.logs.length > 0) {
+          tx.logs[0].events.forEach((event) => {
+            if (event.type === "coin_received") {
+              event.attributes.forEach((attr) => {
+                if (
+                  attr.key === "amount" &&
+                  attr.value.includes("factory/") &&
+                  !attr.value.includes("ophir")
+                ) {
+                  coinReceivedAmount = attr.value;
+                }
+              });
+            }
+          });
+        }
+
+        return {
+          tx: {
+            ...tx.tx.body,
+            txHash: tx.txhash,
+          },
+          memo: tx.tx.body.memo,
+          timestamp: tx.timestamp,
+          coinReceivedAmount: coinReceivedAmount,
+        };
+      });
     // Concatenate the filtered and mapped transactions with the existing ones
     const allTransactions = transactions.concat(filteredAndMappedTransactions);
     // Recursively fetch the next page
@@ -2186,8 +2207,19 @@ function processRedeemTransactions(transactions) {
   const redeemSummary = {};
   const uniqueRedeemers = new Set();
 
+  function parseAssetAmount(assetString) {
+    const match = assetString.match(/^(\d+)(.+)$/);
+    if (match) {
+      return {
+        amount: parseInt(match[1]),
+        denom: match[2],
+      };
+    }
+    return null;
+  }
+
   transactions.forEach((transaction) => {
-    const { tx, memo, timestamp } = transaction;
+    const { tx, memo, timestamp, coinReceivedAmount } = transaction;
     const sender = tx.messages[0].sender;
     const totalAmount = parseInt(tx.messages[0].funds[0].amount) / 1000000; // Divide by 1,000,000
 
@@ -2212,12 +2244,31 @@ function processRedeemTransactions(transactions) {
 
     redeemSummary[sender].totalRedeemed += redeemedAmount;
     redeemSummary[sender].totalFees += feeAmount;
+
+    let parsedCoinReceived = null;
+    if (coinReceivedAmount) {
+      parsedCoinReceived = coinReceivedAmount
+        .split(",")
+        .map((asset) => {
+          const parsed = parseAssetAmount(asset);
+          if (parsed) {
+            return {
+              amount: parsed.amount,
+              denom: parsed.denom,
+            };
+          }
+          return null;
+        })
+        .filter((asset) => asset !== null);
+    }
+
     redeemSummary[sender].redemptions.push({
       totalAmount,
       redeemedAmount,
       feeAmount,
       feePercentage,
       timestamp,
+      receivedAssets: parsedCoinReceived,
     });
   });
 
@@ -2232,6 +2283,7 @@ router.get("/redeemAnalytics", async (req, res) => {
     "migaloo10p9ttf976c4q7czknd3z7saejsmx0uwvy4lgzyg09jmtq6up9e3s3wga9m";
   try {
     const transactions = await fetchRedeemTransactions(redeemContractAddress);
+    console.log(transactions);
     const { summary, uniqueRedeemers } =
       processRedeemTransactions(transactions);
 
