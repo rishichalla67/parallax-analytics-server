@@ -2188,11 +2188,16 @@ function processRedeemTransactions(transactions) {
   transactions.forEach((transaction) => {
     const { tx, memo, timestamp } = transaction;
     const sender = tx.messages[0].sender;
-    const amount = parseInt(tx.messages[0].funds[0].amount) / 1000000; // Divide by 1,000,000
+    const totalAmount = parseInt(tx.messages[0].funds[0].amount) / 1000000; // Divide by 1,000,000
 
-    // Extract fee amount from memo
-    const feeMatch = memo.match(/Fee amount in OPHIR: (\d+)/);
+    // Extract fee amount and percentage from memo
+    const feeMatch = memo.match(
+      /Fee amount in OPHIR: (\d+) \| Fee rate as percentage: ([\d.]+)%/
+    );
     const feeAmount = feeMatch ? parseInt(feeMatch[1]) / 1000000 : 0; // Divide by 1,000,000
+    const feePercentage = feeMatch ? parseFloat(feeMatch[2]) : 0;
+
+    const redeemedAmount = totalAmount - feeAmount;
 
     if (!redeemSummary[sender]) {
       redeemSummary[sender] = {
@@ -2202,11 +2207,13 @@ function processRedeemTransactions(transactions) {
       };
     }
 
-    redeemSummary[sender].totalRedeemed += amount;
+    redeemSummary[sender].totalRedeemed += redeemedAmount;
     redeemSummary[sender].totalFees += feeAmount;
     redeemSummary[sender].redemptions.push({
-      amount,
+      totalAmount,
+      redeemedAmount,
       feeAmount,
+      feePercentage,
       timestamp,
     });
   });
@@ -2230,6 +2237,7 @@ router.get("/redeemAnalytics", async (req, res) => {
     res.status(500).json({ error: "An unexpected error occurred" });
   }
 });
+
 router.get("/getSeekerRoundDetails", async (req, res) => {
   const accountId =
     "migaloo14gu2xfk4m3x64nfkv9cvvjgmv2ymwhps7fwemk29x32k2qhdrmdsp9y2wu";
