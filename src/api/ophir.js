@@ -2184,6 +2184,7 @@ function sumTransactionAmounts(transactions) {
 
 function processRedeemTransactions(transactions) {
   const redeemSummary = {};
+  const uniqueRedeemers = new Set();
 
   transactions.forEach((transaction) => {
     const { tx, memo, timestamp } = transaction;
@@ -2198,6 +2199,8 @@ function processRedeemTransactions(transactions) {
     const feePercentage = feeMatch ? parseFloat(feeMatch[2]) : 0;
 
     const redeemedAmount = totalAmount - feeAmount;
+
+    uniqueRedeemers.add(sender);
 
     if (!redeemSummary[sender]) {
       redeemSummary[sender] = {
@@ -2218,7 +2221,10 @@ function processRedeemTransactions(transactions) {
     });
   });
 
-  return redeemSummary;
+  return {
+    summary: redeemSummary,
+    uniqueRedeemersCount: uniqueRedeemers.size,
+  };
 }
 
 router.get("/redeemAnalytics", async (req, res) => {
@@ -2226,10 +2232,12 @@ router.get("/redeemAnalytics", async (req, res) => {
     "migaloo10p9ttf976c4q7czknd3z7saejsmx0uwvy4lgzyg09jmtq6up9e3s3wga9m";
   try {
     const transactions = await fetchRedeemTransactions(redeemContractAddress);
-    const redeemSummary = processRedeemTransactions(transactions);
+    const { summary, uniqueRedeemersCount } =
+      processRedeemTransactions(transactions);
 
     res.json({
-      redeemSummary,
+      redeemSummary: summary,
+      uniqueRedeemersCount,
       transactionCount: transactions.length,
     });
   } catch (error) {
