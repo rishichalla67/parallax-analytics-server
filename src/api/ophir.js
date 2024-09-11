@@ -2086,6 +2086,41 @@ router.get("/getAllSeekers", async (req, res) => {
   }
 });
 
+async function fetchRedeemTransactions(accountId, page = 1, transactions = []) {
+  const url = `https://migaloo.explorer.interbloc.org/transactions/account/${accountId}?per_page=15&page=${page}&order_by=height&order_direction=desc&exclude_failed=false`;
+  try {
+    const response = await axios.get(url);
+    const fetchedTransactions = response.data.transactions;
+    if (fetchedTransactions.length === 0) {
+      // No more transactions to fetch
+      return transactions;
+    }
+    // Filter transactions where the memo includes "Fee amount in OPHIR"
+    const filteredAndMappedTransactions = fetchedTransactions
+      .filter(
+        (tx) =>
+          tx.tx.body &&
+          tx.tx.body.memo &&
+          tx.tx.body.memo.includes("Fee amount in OPHIR")
+      )
+      .map((tx) => ({
+        tx: {
+          ...tx.tx.body,
+          txHash: tx.txhash,
+        },
+        memo: tx.tx.body.memo,
+        timestamp: tx.timestamp,
+      }));
+    // Concatenate the filtered and mapped transactions with the existing ones
+    const allTransactions = transactions.concat(filteredAndMappedTransactions);
+    // Recursively fetch the next page
+    return fetchRedeemTransactions(accountId, page + 1, allTransactions);
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    throw error; // Rethrow the error to handle it in the calling function
+  }
+}
+
 async function fetchTransactionsForAccount(
   accountId,
   page = 1,
@@ -2147,6 +2182,54 @@ function sumTransactionAmounts(transactions) {
   return 100000000 - totalAmount / 1000000 / 0.0025;
 }
 
+function processRedeemTransactions(transactions) {
+  const redeemSummary = {};
+
+  transactions.forEach((transaction) => {
+    const { tx, memo, timestamp } = transaction;
+    const sender = tx.messages[0].sender;
+    const amount = parseInt(tx.messages[0].funds[0].amount) / 1000000; // Divide by 1,000,000
+
+    // Extract fee amount from memo
+    const feeMatch = memo.match(/Fee amount in OPHIR: (\d+)/);
+    const feeAmount = feeMatch ? parseInt(feeMatch[1]) / 1000000 : 0; // Divide by 1,000,000
+
+    if (!redeemSummary[sender]) {
+      redeemSummary[sender] = {
+        totalRedeemed: 0,
+        totalFees: 0,
+        redemptions: [],
+      };
+    }
+
+    redeemSummary[sender].totalRedeemed += amount;
+    redeemSummary[sender].totalFees += feeAmount;
+    redeemSummary[sender].redemptions.push({
+      amount,
+      feeAmount,
+      timestamp,
+    });
+  });
+
+  return redeemSummary;
+}
+
+router.get("/redeemAnalytics", async (req, res) => {
+  const redeemContractAddress =
+    "migaloo10p9ttf976c4q7czknd3z7saejsmx0uwvy4lgzyg09jmtq6up9e3s3wga9m";
+  try {
+    const transactions = await fetchRedeemTransactions(redeemContractAddress);
+    const redeemSummary = processRedeemTransactions(transactions);
+
+    res.json({
+      redeemSummary,
+      transactionCount: transactions.length,
+    });
+  } catch (error) {
+    console.error("An error occurred:", error);
+    res.status(500).json({ error: "An unexpected error occurred" });
+  }
+});
 router.get("/getSeekerRoundDetails", async (req, res) => {
   const accountId =
     "migaloo14gu2xfk4m3x64nfkv9cvvjgmv2ymwhps7fwemk29x32k2qhdrmdsp9y2wu";
