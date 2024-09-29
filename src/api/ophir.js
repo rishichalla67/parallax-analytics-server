@@ -505,26 +505,20 @@ async function fetchCoinPrices() {
   //   }
 
   try {
-    const kujiraRatesResponse = await axios.get(
-      "https://lcd.kaiyo.kujira.setten.io/oracle/denoms/exchange_rates"
-    );
-    const kujiraRates = kujiraRatesResponse.data.exchange_rates;
-
-    for (const rate of kujiraRates) {
-      // Use the value from symbolDenomMap if it exists, otherwise use the original key
-      let formattedKey = rate.denom.toLowerCase();
-
-      // Change key to 'ampKuji' if formattedKey is 'ampkuji'
-      if (formattedKey === "ampkuji") {
-        formattedKey = "ampKuji";
-      }
+    const osmosisTokensResponse = await axios.get('https://api-osmosis.imperator.co/tokens/v2/all');
+    const osmosisTokens = osmosisTokensResponse.data;
+  
+    for (const token of osmosisTokens) {
+      const symbol = token.symbol.toLowerCase();
+      const price = String(parseFloat(token.price).toFixed(10)); // Format to 10 decimal places
+  
       // Only add if the key does not already exist in prices
-      if (!prices.hasOwnProperty(formattedKey)) {
-        prices[formattedKey] = parseFloat(rate.amount);
+      if (!prices.hasOwnProperty(symbol)) {
+        prices[symbol] = String(price);
       }
     }
   } catch (error) {
-    console.error("Error fetching Kujira exchange rates:", error);
+    console.error("Error fetching Osmosis token prices:", error);
   }
 
   prices["ampRoar"] = prices["roar"] * AMPROAR_ERIS_CONSTANT;
