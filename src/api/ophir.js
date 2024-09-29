@@ -510,11 +510,11 @@ async function fetchCoinPrices() {
   
     for (const token of osmosisTokens) {
       const symbol = token.symbol.toLowerCase();
-      const price = String(parseFloat(token.price).toFixed(10)); // Format to 10 decimal places
+      const price = parseFloat(token.price).toFixed(10); // Format to 10 decimal places
   
       // Only add if the key does not already exist in prices
       if (!prices.hasOwnProperty(symbol)) {
-        prices[symbol] = String(price);
+        prices[symbol] = price;
       }
     }
   } catch (error) {
