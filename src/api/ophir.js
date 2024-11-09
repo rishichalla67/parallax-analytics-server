@@ -367,6 +367,7 @@ async function fetchStatData() {
     poolDataQueryMsg,
     "migaloo"
   );
+  console.log("ophirWhalePoolData: ", cache.ophirWhalePoolData)
   cache.ophirWbtcPoolData = await queryContract(
     "migaloo154k8ta3n0eduqrkr657f0kaj8yc89rczjpznxwnrnfvdlnjkxkjq0mv55f",
     poolDataQueryMsg,
@@ -403,7 +404,7 @@ async function fetchCoinPrices() {
   for (const asset of priceAssetList) {
     try {
       const response = await axios.get(
-        `https://api-osmosis.imperator.co/tokens/v2/price/${asset.toLowerCase()}`
+        `https://sqsprod.osmosis.zone/tokens/prices?base=ibc%2FB65E189D3168DB40C88C6A6C92CA3D3BB0A8B6310325D4C43AB5702F06ECD60B`
       );
       prices[asset] = response.data.price;
     } catch (error) {
@@ -505,12 +506,12 @@ async function fetchCoinPrices() {
   //   }
 
   try {
-    const osmosisTokensResponse = await axios.get('https://api-osmosis.imperator.co/tokens/v2/all');
-    const osmosisTokens = osmosisTokensResponse.data;
+    const osmosisTokensResponse = await axios.get('https://rest.cosmos.directory/kujira/oracle/denoms/exchange_rates');
+    const exchangeRates = osmosisTokensResponse.data.exchange_rates;
   
-    for (const token of osmosisTokens) {
-      const symbol = token.symbol.toLowerCase();
-      const price = parseFloat(token.price).toFixed(10); // Format to 10 decimal places
+    for (const rate of exchangeRates) {
+      const symbol = rate.denom.toLowerCase();
+      const price = parseFloat(rate.amount);
   
       // Only add if the key does not already exist in prices
       if (!prices.hasOwnProperty(symbol)) {
@@ -1075,23 +1076,23 @@ async function caclulateAndAddTotalTreasuryValue(balances) {
     console.error("Error fetching Sail Whale LP Data:", error);
   }
 
-  try {
-    const response = await axios.get(
-      "https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate"
-    );
-    ampKujiPrice = response.data || 0;
-  } catch (error) {
-    console.error("Error fetching AMP Kuji Price:", error);
-  }
+  // try {
+  //   const response = await axios.get(
+  //     "https://rest.cosmos.directory/kujira/oracle/denoms/AMPKUJI/exchange_rate"
+  //   );
+  //   ampKujiPrice = response.data || 0;
+  // } catch (error) {
+  //   console.error("Error fetching AMP Kuji Price:", error);
+  // }
 
-  try {
-    const response = await axios.get(
-      "https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate"
-    );
-    kujiPrice = response.data || 0;
-  } catch (error) {
-    console.error("Error fetching Kuji Price:", error);
-  }
+  // try {
+  //   const response = await axios.get(
+  //     "https://rest.cosmos.directory/kujira/oracle/denoms/KUJI/exchange_rate"
+  //   );
+  //   kujiPrice = response.data || 0;
+  // } catch (error) {
+  //   console.error("Error fetching Kuji Price:", error);
+  // }
 
   let prices = {
     ...cache.coinPrices,
@@ -1415,11 +1416,11 @@ async function getTreasuryAssets() {
     "https://phoenix-lcd.terra.dev/cosmwasm/wasm/v1/contract/terra1jwyzzsaag4t0evnuukc35ysyrx9arzdde2kg9cld28alhjurtthq0prs2s/smart/ewogICJhbGxfcGVuZGluZ19yZXdhcmRzIjogeyJhZGRyZXNzIjoidGVycmExdGpmOTVxZWo3Zm1ja2M5MjdzN3dja214Z2dmdGgyM3VucDRkbmw0OXhheGVjNXdlYTlucTl5czMwciJ9Cn0="
   );
   const allianceMigalooStakingAssets = await axios.get(
-    "https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0="
+    "https://migaloo-rest.publicnode.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/ewogICJzdGFrZWRfYmFsYW5jZSI6IHsiYWRkcmVzcyI6Im1pZ2Fsb28xeDZuOXpnNjNhdWh0dXZndWN2bmV6MHdobmFhZW1xcGdybmwwc2w4dmZnOWhqdmVkNzZwcW5ndG1nayIsCiAgICJhc3NldCI6ewogICAgICAgIm5hdGl2ZSI6ImZhY3RvcnkvbWlnYWxvbzFheHR6NHk3anl2ZGtrcmZsa252OWRjdXQ5NHhyNWs4bTZ3ZXRlNHJkcnc0ZnVwdGs4OTZzdTQ0eDJ6L3VMUCIKICAgfSAgIAogICAgICAKICB9CiAgCn0="
   );
   // const allianceMigalooStakingAssets = await queryContract("migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd", stakingBalanceQueryMsg);
   const allianceMigalooStakingRewards = await axios.get(
-    "https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0="
+    "https://migaloo-rest.publicnode.com/cosmwasm/wasm/v1/contract/migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd/smart/eyJhbGxfcGVuZGluZ19yZXdhcmRzIjp7ImFkZHJlc3MiOiJtaWdhbG9vMXg2bjl6ZzYzYXVodHV2Z3Vjdm5lejB3aG5hYWVtcXBncm5sMHNsOHZmZzloanZlZDc2cHFuZ3RtZ2sifX0="
   );
   // const allianceMigalooStakingRewards = await queryContract('migaloo190qz7q5fu4079svf890h4h3f8u46ty6cxnlt78eh486k9qm995hquuv9kd', stakingRewardsQueryMsg);
 
@@ -1552,23 +1553,23 @@ async function getPrices() {
     console.error("Error fetching Sail Whale LP Data:", error);
   }
 
-  try {
-    const response = await axios.get(
-      "https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate"
-    );
-    ampKujiPrice = response.data || 0;
-  } catch (error) {
-    console.error("Error fetching AMP Kuji Price:", error);
-  }
+  // try {
+  //   const response = await axios.get(
+  //     "https://lcd-kujira.whispernode.com/oracle/denoms/AMPKUJI/exchange_rate"
+  //   );
+  //   ampKujiPrice = response.data || 0;
+  // } catch (error) {
+  //   console.error("Error fetching AMP Kuji Price:", error);
+  // }
 
-  try {
-    const response = await axios.get(
-      "https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate"
-    );
-    kujiPrice = response.data || 0;
-  } catch (error) {
-    console.error("Error fetching Kuji Price:", error);
-  }
+  // try {
+  //   const response = await axios.get(
+  //     "https://lcd-kujira.whispernode.com/oracle/denoms/KUJI/exchange_rate"
+  //   );
+  //   kujiPrice = response.data || 0;
+  // } catch (error) {
+  //   console.error("Error fetching Kuji Price:", error);
+  // }
 
   let prices = {
     ...cache.coinPrices,
@@ -1604,9 +1605,6 @@ async function getPrices() {
     ampLuna:
       statData?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT ||
       cache?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT,
-    bLuna:
-      statData?.coinPrices["luna"] * BLUNA_CONSTANT ||
-      cache?.coinPrices["luna"] * BLUNA_CONSTANT,
   };
 
   return prices;
@@ -1979,7 +1977,7 @@ const fetchVestingAccounts = async () => {
 
   try {
     const vestingAccountsUrl =
-      "https://ww-migaloo-rest.polkachu.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==";
+      "https://migaloo-rest.publicnode.com/cosmwasm/wasm/v1/contract/migaloo10uky7dtyfagu4kuxvsm26cvpglq25qwlaap2nzxutma594h6rx9qxtk9eq/smart/eyAidmVzdGluZ19hY2NvdW50cyI6IHt9fQ==";
     const response = await axios.get(vestingAccountsUrl);
     console.log(response.data.data.vesting_accounts);
     if (response.data && response.data.data) {
