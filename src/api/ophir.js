@@ -1474,10 +1474,25 @@ async function getPrices() {
   let statData;
   const now = Date.now();
   const cacheTimeLimit = 300000; // 60000 milliseconds in a minute
+
   // Check if cache is valid
   if (now - cache.lastFetch > cacheTimeLimit || !cache.coinPrices) {
     statData = await fetchStatData(); // Fetch new data if cache is older than cacheTimeLimit or coinPrices is not cached
   }
+
+  // Add DGN price fetch
+  let dgnPrice = 0;
+  try {
+    const response = await axios.get('https://app.osmosis.zone/api/edge-trpc-assets/assets.getAssetPrice,assets.getCoingeckoCoin,assets.getMarketAsset,assets.getMarketAsset,assets.getAssetPrice,assets.getAssetPrice?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22coinMinimalDenom%22%3A%22uosmo%22%7D%7D%2C%221%22%3A%7B%22json%22%3A%7B%22coinGeckoId%22%3A%22dragon-coin-2%22%7D%7D%2C%222%22%3A%7B%22json%22%3A%7B%22findMinDenomOrSymbol%22%3A%22ibc%2F3B95D63B520C283BCA86F8CD426D57584039463FD684A5CBA31D2780B86A1995%22%7D%7D%2C%223%22%3A%7B%22json%22%3A%7B%22findMinDenomOrSymbol%22%3A%22DGN%22%7D%7D%2C%224%22%3A%7B%22json%22%3A%7B%22coinMinimalDenom%22%3A%22ibc%2F498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4%22%7D%7D%2C%225%22%3A%7B%22json%22%3A%7B%22coinMinimalDenom%22%3A%22ibc%2F3B95D63B520C283BCA86F8CD426D57584039463FD684A5CBA31D2780B86A1995%22%7D%7D%7D');
+    const marketAssetData = response.data[2]?.result?.data?.json;
+    if (marketAssetData && marketAssetData.currentPrice) {
+      const priceData = JSON.parse(marketAssetData.currentPrice);
+      dgnPrice = parseFloat(priceData.amount);
+    }
+  } catch (error) {
+    console.error('Error fetching DGN price:', error);
+  }
+
   const ophirlpAmount = parseFloat(
     cache?.ophirWhalePoolData.assets.find(
       (asset) => asset.info.native_token.denom === OPHIR
@@ -1499,6 +1514,7 @@ async function getPrices() {
       (asset) => asset.info.native_token.denom === WBTC
     ).amount
   );
+
   const bWhalelpAmount = parseFloat(
     cache?.bWhaleWhalePoolData.assets.find(
       (asset) => asset.info.native_token.denom === B_WHALE
@@ -1605,6 +1621,7 @@ async function getPrices() {
     ampLuna:
       statData?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT ||
       cache?.coinPrices["luna"] * AMPLUNA_ERIS_CONSTANT,
+    dgn: dgnPrice, // Add DGN price to the prices object
   };
 
   return prices;
@@ -1618,9 +1635,11 @@ async function getTreasuryValues(priceData, treasuryAssets) {
         "totalTreasuryValue",
         "treasuryValueWithoutOphir",
         "ophirRedemptionPrice",
-      ].includes(assetKey)
-    )
+      ].includes(assetKey) ||
+      assetKey === "ophir"
+    ) {
       return acc;
+    }
 
     const asset = treasuryAssets[assetKey];
     const assetPrice = priceData[assetKey];
@@ -2582,5 +2601,159 @@ router.get("/nextUpdateTime", (req, res) => {
   nextUpdateTime = getNextUpdateTime();
   res.status(200).json({ nextUpdateTime: nextUpdateTime });
 });
+
+// Add new endpoint
+router.get("/bonds/nftInfo", async (req, res) => {
+  const { isTestnet, bond_contract_address } = req.query;
+  
+  if (!bond_contract_address) {
+    return res.status(400).json({ error: "bond_contract_address is required" });
+  }
+
+  const rpc = isTestnet === 'true' 
+    ? "https://migaloo-testnet-rpc.polkachu.com"
+    : "https://migaloo-rpc.polkachu.com";
+
+  try {
+    // Query bond contract for all offers
+    const { CosmWasmClient } = await import("@cosmjs/cosmwasm-stargate");
+    const client = await CosmWasmClient.connect(rpc);
+    
+    const response = await client.queryContractSmart(
+      bond_contract_address,
+      {
+        "get_all_bond_offers": {}
+      }
+    );
+
+    // Log the raw response
+    console.log('Raw bond offers response:', JSON.stringify(response, null, 2));
+    
+    // Safely extract bond offers array
+    let bondOffers = [];
+    if (response && typeof response === 'object') {
+      bondOffers = Array.isArray(response) ? response : 
+                   Array.isArray(response.bond_offers) ? response.bond_offers :
+                   Array.isArray(response.data) ? response.data : [];
+    }
+
+    console.log('Processed bond offers:', JSON.stringify(bondOffers, null, 2));
+
+    if (bondOffers.length === 0) {
+      return res.json({
+        total_bonds: 0,
+        total_valid_nfts: 0,
+        bonds: []
+      });
+    }
+
+    // Fetch NFT info for each offer
+    const nftPromises = bondOffers.map(async (offer) => {
+      try {
+        console.log(`Querying NFT for contract: ${offer.contract_addr}, token: ${offer.nft_id}`);
+        
+        const { CosmWasmClient } = await import("@cosmjs/cosmwasm-stargate");
+        const nftClient = await CosmWasmClient.connect(rpc);
+        
+        const nftInfo = await nftClient.queryContractSmart(
+          offer.contract_addr,
+          {
+            "nft_info": {
+              "token_id": offer.nft_id
+            }
+          }
+        );
+
+        console.log(`NFT info response for token ${offer.nft_id}:`, JSON.stringify(nftInfo, null, 2));
+
+        return {
+          bond_id: offer.bond_id,
+          nft_id: offer.nft_id,
+          contract_addr: offer.contract_addr,
+          ...nftInfo
+        };
+      } catch (error) {
+        console.error(`Error fetching NFT info for bond_id ${offer.bond_id}, nft_id ${offer.nft_id}:`, error);
+        return {
+          bond_id: offer.bond_id,
+          nft_id: offer.nft_id,
+          contract_addr: offer.contract_addr,
+          error: `Failed to fetch NFT info: ${error.message}`
+        };
+      }
+    });
+
+    const nftResults = await Promise.all(nftPromises);
+    const validResults = nftResults.filter(result => !result.error);
+
+    res.json({
+      total_bonds: bondOffers.length,
+      total_valid_nfts: validResults.length,
+      bonds: nftResults
+    });
+
+  } catch (error) {
+    console.error("Error fetching bond NFT info:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch bond NFT information",
+      details: error.message 
+    });
+  }
+});
+
+// Add these at the top of the file with other imports
+const nftInfoCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Add the NFT cache functions
+const invalidateNFTCache = (contractAddr, tokenId) => {
+  const cacheKey = `${contractAddr}_${tokenId}`;
+  if (nftInfoCache.has(cacheKey)) {
+    console.log('🗑️ Invalidating NFT cache for:', cacheKey);
+    nftInfoCache.delete(cacheKey);
+  }
+};
+
+const getNFTInfo = async (contractAddr, tokenId, rpc) => {
+  const cacheKey = `${contractAddr}_${tokenId}`;
+  const now = Date.now();
+  
+  // Check cache first
+  if (nftInfoCache.has(cacheKey)) {
+    const cachedData = nftInfoCache.get(cacheKey);
+    if (now - cachedData.timestamp < CACHE_DURATION) {
+      console.log('📦 Using cached NFT info for:', cacheKey);
+      return cachedData.data;
+    } else {
+      // Remove expired cache entry
+      nftInfoCache.delete(cacheKey);
+    }
+  }
+
+  try {
+    const { CosmWasmClient } = await import("@cosmjs/cosmwasm-stargate");
+    const nftClient = await CosmWasmClient.connect(rpc);
+    const nftInfo = await nftClient.queryContractSmart(
+      contractAddr,
+      {
+        nft_info: {
+          token_id: tokenId
+        }
+      }
+    );
+    
+    // Cache the result
+    nftInfoCache.set(cacheKey, {
+      data: nftInfo,
+      timestamp: now
+    });
+    
+    console.log(`📦 Fetched and cached NFT Info for token ${tokenId}:`, nftInfo);
+    return nftInfo;
+  } catch (error) {
+    console.error(`Error fetching NFT info for token ${tokenId}:`, error);
+    throw error;
+  }
+};
 
 module.exports = router;
