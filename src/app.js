@@ -9,6 +9,7 @@ const middlewares = require('./middlewares');
 const api = require('./api');
 const coingecko = require('./api/coingecko');
 const ophir = require('./api/ophir');
+const kosher = require('./api/kosher');
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 
 app.use('/', coingecko);
 app.use('/ophir', ophir);
+app.use('/kosher', kosher);
 // app.use('/api/v1', api);
 
 app.use(middlewares.notFound);
