@@ -222,15 +222,25 @@ warmupCache().then(() => {
         newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
       }
 
+      // Log the number of new transactions before processing
+      console.log(`Fetched ${newTransactions.length} new transactions from ${source}`);
+
       if (newTransactions.length > 0) {
+        // Keep existing transactions
+        const existingTransactions = Array.from(transactionsCache.data.values());
+        
+        // Add new transactions
         newTransactions.forEach(tx => {
           if (!transactionsCache.data.has(tx.signature)) {
             transactionsCache.data.set(tx.signature, tx);
           }
         });
+
         transactionsCache.lastFetch = Date.now();
         cleanupCache();
-        console.log(`Cache updated successfully. Source: ${source}, Total cached: ${transactionsCache.data.size}`);
+        
+        // Log the before and after cache sizes
+        console.log(`Cache updated. Previous size: ${existingTransactions.length}, New size: ${transactionsCache.data.size}`);
       }
     } catch (error) {
       console.error('Error in scheduled cache update:', error);
