@@ -178,24 +178,14 @@ function cleanupCache() {
 async function warmupCache() {
   console.log('Starting cache warmup...');
   try {
-    let source = 'solanabeach';
-    let transactions = [];
-
-    try {
-      const response = await fetchTransactionsFromSolanaBeach(INITIAL_FETCH_COUNT);
-      transactions = response.transactions;
-    } catch (error) {
-      console.log('SolanaBeach failed during warmup, trying QuickNode...');
-      source = 'quicknode';
-      transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
-    }
+    const transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
 
     if (transactions.length > 0) {
       transactions.forEach(tx => {
         transactionsCache.data.set(tx.signature, tx);
       });
       transactionsCache.lastFetch = Date.now();
-      console.log(`Cache warmup complete. Source: ${source}, Initial cache size: ${transactionsCache.data.size}`);
+      console.log(`Cache warmup complete. Source: quicknode, Initial cache size: ${transactionsCache.data.size}`);
     } else {
       console.log('Cache warmup completed but no transactions were fetched');
     }
@@ -204,48 +194,35 @@ async function warmupCache() {
   }
 }
 
-// Call warmup when the module is loaded
-warmupCache().then(() => {
-  // Start the cron job only after warmup is complete
-  cron.schedule(CRON_SCHEDULE, async () => {
-    console.log('Running scheduled cache update...');
-    try {
-      let newTransactions = [];
-      let source = 'solanabeach';
+// Modify the cron job to only use QuickNode
+cron.schedule(CRON_SCHEDULE, async () => {
+  console.log('Running scheduled cache update...');
+  try {
+    const newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
 
-      try {
-        const response = await fetchTransactionsFromSolanaBeach(UPDATE_FETCH_COUNT);
-        newTransactions = response.transactions;
-      } catch (error) {
-        console.log('SolanaBeach failed, trying QuickNode...');
-        source = 'quicknode';
-        newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
-      }
+    // Log the number of new transactions before processing
+    console.log(`Fetched ${newTransactions.length} new transactions from quicknode`);
 
-      // Log the number of new transactions before processing
-      console.log(`Fetched ${newTransactions.length} new transactions from ${source}`);
+    if (newTransactions.length > 0) {
+      // Keep existing transactions
+      const existingTransactions = Array.from(transactionsCache.data.values());
+      
+      // Add new transactions
+      newTransactions.forEach(tx => {
+        if (!transactionsCache.data.has(tx.signature)) {
+          transactionsCache.data.set(tx.signature, tx);
+        }
+      });
 
-      if (newTransactions.length > 0) {
-        // Keep existing transactions
-        const existingTransactions = Array.from(transactionsCache.data.values());
-        
-        // Add new transactions
-        newTransactions.forEach(tx => {
-          if (!transactionsCache.data.has(tx.signature)) {
-            transactionsCache.data.set(tx.signature, tx);
-          }
-        });
-
-        transactionsCache.lastFetch = Date.now();
-        cleanupCache();
-        
-        // Log the before and after cache sizes
-        console.log(`Cache updated. Previous size: ${existingTransactions.length}, New size: ${transactionsCache.data.size}`);
-      }
-    } catch (error) {
-      console.error('Error in scheduled cache update:', error);
+      transactionsCache.lastFetch = Date.now();
+      cleanupCache();
+      
+      // Log the before and after cache sizes
+      console.log(`Cache updated. Previous size: ${existingTransactions.length}, New size: ${transactionsCache.data.size}`);
     }
-  });
+  } catch (error) {
+    console.error('Error in scheduled cache update:', error);
+  }
 });
 
 // Modify the endpoint to handle cold starts better
@@ -456,6 +433,14 @@ router.get('/rabbi/price', async (req, res) => {
       error: 'Failed to fetch SHEKEL price data'
     });
   }
+});
+
+// Add this after the cache-related constants and before the routes
+// Warm up the cache when the server starts
+warmupCache().then(() => {
+  console.log('Initial cache warmup completed on server start');
+}).catch(error => {
+  console.error('Error during initial cache warmup:', error);
 });
 
 module.exports = router;
