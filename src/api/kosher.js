@@ -110,26 +110,59 @@ router.get('/rabbi/balances', async (req, res) => {
   const address = '5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt';
   
   try {
-    const tokensResponse = await axios.get(
-      `https://public-api.solanabeach.io/v1/account/${address}/tokens`,
-      {
-        headers: {
-          'accept': '*/*',
-          'content-type': 'application/json',
-          'origin': 'https://solanabeach.io',
-          'referer': 'https://solanabeach.io/',
-          'sec-fetch-site': 'same-site',
-          'sec-fetch-mode': 'cors',
-          'sec-fetch-dest': 'empty',
-          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
-        }
+    // Fetch token balances using QuickNode
+    const tokensResponse = await quickNodeRateLimiter({
+      method: 'post',
+      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenAccountsByOwner",
+        "params": [
+          address,
+          {
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          },
+          {
+            "encoding": "jsonParsed"
+          }
+        ]
       }
-    );
+    });
+
+    // Fetch SOL balance using QuickNode
+    const solResponse = await quickNodeRateLimiter({
+      method: 'post',
+      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getBalance",
+        "params": [address]
+      }
+    });
+
+    const solBalance = solResponse.data?.result?.value / 1e9; // Convert lamports to SOL
+    const tokens = tokensResponse.data?.result?.value || [];
+
+    // Format token data
+    const formattedTokens = tokens.map(item => ({
+      mint: item.account.data.parsed.info.mint,
+      amount: item.account.data.parsed.info.tokenAmount.uiAmount,
+      decimals: item.account.data.parsed.info.tokenAmount.decimals
+    }));
 
     res.json({
       success: true,
       data: {
-        tokens: tokensResponse.data,
+        tokens: formattedTokens,
+        solBalance,
         lastUpdated: new Date().toISOString()
       }
     });
