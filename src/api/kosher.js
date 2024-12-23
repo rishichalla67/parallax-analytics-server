@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { getDatabase } = require('firebase-admin/database');
+const cron = require('node-cron');
 
 const router = express.Router();
 
@@ -142,128 +143,247 @@ router.get('/rabbi/balances', async (req, res) => {
   }
 });
 
-// Get transactions with pagination
+// Near the top with other global variables
+let transactionsCache = {
+  data: new Map(), // Using Map to store transactions by signature
+  lastFetch: null
+};
+const FETCH_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const INITIAL_FETCH_COUNT = 25;
+const UPDATE_FETCH_COUNT = 10; // Fetch fewer transactions during updates
+const MAX_CACHE_SIZE = 1000; // Maximum number of transactions to keep in cache
+const CLEANUP_THRESHOLD = 900; // When to trigger cleanup (90% of max)
+const CRON_SCHEDULE = '*/10 * * * *'; // Runs every 10 minutes
+
+// Function to clean up old transactions when cache gets too large
+function cleanupCache() {
+  if (transactionsCache.data.size > CLEANUP_THRESHOLD) {
+    console.log(`Cleaning up cache. Current size: ${transactionsCache.data.size}`);
+    
+    // Convert to array, sort by timestamp, and get newest MAX_CACHE_SIZE/2 transactions
+    const sortedTxs = Array.from(transactionsCache.data.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_CACHE_SIZE/2);
+    
+    // Reset cache with cleaned up data
+    transactionsCache.data = new Map(
+      sortedTxs.map(tx => [tx.signature, tx])
+    );
+    
+    console.log(`Cleanup complete. New size: ${transactionsCache.data.size}`);
+  }
+}
+
+// Add near other cache-related code
+async function warmupCache() {
+  console.log('Starting cache warmup...');
+  try {
+    let source = 'solanabeach';
+    let transactions = [];
+
+    try {
+      const response = await fetchTransactionsFromSolanaBeach(INITIAL_FETCH_COUNT);
+      transactions = response.transactions;
+    } catch (error) {
+      console.log('SolanaBeach failed during warmup, trying QuickNode...');
+      source = 'quicknode';
+      transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
+    }
+
+    if (transactions.length > 0) {
+      transactions.forEach(tx => {
+        transactionsCache.data.set(tx.signature, tx);
+      });
+      transactionsCache.lastFetch = Date.now();
+      console.log(`Cache warmup complete. Source: ${source}, Initial cache size: ${transactionsCache.data.size}`);
+    } else {
+      console.log('Cache warmup completed but no transactions were fetched');
+    }
+  } catch (error) {
+    console.error('Error during cache warmup:', error);
+  }
+}
+
+// Call warmup when the module is loaded
+warmupCache().then(() => {
+  // Start the cron job only after warmup is complete
+  cron.schedule(CRON_SCHEDULE, async () => {
+    console.log('Running scheduled cache update...');
+    try {
+      let newTransactions = [];
+      let source = 'solanabeach';
+
+      try {
+        const response = await fetchTransactionsFromSolanaBeach(UPDATE_FETCH_COUNT);
+        newTransactions = response.transactions;
+      } catch (error) {
+        console.log('SolanaBeach failed, trying QuickNode...');
+        source = 'quicknode';
+        newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
+      }
+
+      if (newTransactions.length > 0) {
+        newTransactions.forEach(tx => {
+          if (!transactionsCache.data.has(tx.signature)) {
+            transactionsCache.data.set(tx.signature, tx);
+          }
+        });
+        transactionsCache.lastFetch = Date.now();
+        cleanupCache();
+        console.log(`Cache updated successfully. Source: ${source}, Total cached: ${transactionsCache.data.size}`);
+      }
+    } catch (error) {
+      console.error('Error in scheduled cache update:', error);
+    }
+  });
+});
+
+// Modify the endpoint to handle cold starts better
 router.get('/rabbi/transactions', async (req, res) => {
   try {
-    const { page = 1, limit = 100 } = req.query;
-    const db = getDatabase();
-    const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-
-    // First check Firebase for cached transactions
-    const txRef = db.ref('transactions');
-    const lastBlockRef = db.ref('lastProcessedBlock');
-    
-    const [cachedTxsSnapshot, lastBlockSnapshot] = await Promise.all([
-      txRef.orderByChild('blocktime/absolute').startAfter(oneWeekAgo/1000).get(),
-      lastBlockRef.get()
-    ]);
-
-    let allTransactions = [];
-    const cachedTxs = cachedTxsSnapshot.val() || {};
-    const lastProcessedBlock = lastBlockSnapshot.val()?.blockHeight;
-    
-    if (Object.keys(cachedTxs).length > 0) {
-      allTransactions = Object.values(cachedTxs);
+    // If cache is empty, wait for warmup
+    if (!transactionsCache.data.size) {
+      await warmupCache();
     }
 
-    let currentCursor = null;
-    if (lastProcessedBlock) {
-      const lastTx = allTransactions.find(tx => tx.blockNumber === lastProcessedBlock);
-      if (lastTx) {
-        currentCursor = `${lastProcessedBlock}%2C0`;
-      }
-    }
+    const allTransactions = Array.from(transactionsCache.data.values())
+      .sort((a, b) => b.timestamp - a.timestamp);
 
-    let hasMore = true;
-    while (hasMore) {
-      try {
-        let url = 'https://public-api.solanabeach.io/v1/account/5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt/transactions';
-        if (currentCursor) {
-          url += `?cursor=${currentCursor}`;
-        }
-
-        const response = await throttledAxios({
-          method: 'get',
-          url,
-          headers: {
-            'accept': '*/*',
-            'content-type': 'application/json',
-            'origin': 'https://solanabeach.io',
-            'referer': 'https://solanabeach.io/',
-            'sec-fetch-site': 'same-site',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-dest': 'empty',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
-          }
-        });
-
-        if (!response.data || response.data.length === 0) {
-          hasMore = false;
-          continue;
-        }
-
-        // Process new transactions
-        for (const tx of response.data) {
-          const txTimestamp = tx.blocktime.absolute * 1000;
-          
-          if (txTimestamp < oneWeekAgo) {
-            await txRef.child(tx.transactionHash).set({
-              ...tx,
-              storedAt: Date.now()
-            });
-          } else {
-            allTransactions.push(tx);
-          }
-        }
-
-        // Update cursor for next batch
-        const smallestBlock = Math.min(...response.data.map(tx => tx.blockNumber));
-        currentCursor = `${smallestBlock}%2C0`;
-
-        await lastBlockRef.set({
-          blockHeight: smallestBlock,
-          updatedAt: Date.now()
-        });
-
-      } catch (error) {
-        if (error.response?.status === 429) {
-          const retryAfter = parseInt(error.response.headers['retry-after'] || '5000');
-          console.log(`Rate limited. Waiting ${retryAfter}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter));
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    // Sort and paginate results
-    allTransactions.sort((a, b) => b.blocktime.absolute - a.blocktime.absolute);
-    const startIndex = (page - 1) * limit;
-    const endIndex = page * limit;
-    const paginatedTransactions = allTransactions.slice(startIndex, endIndex);
-
-    res.json({
+    const formattedResponse = {
       success: true,
       data: {
-        transactions: paginatedTransactions,
-        pagination: {
-          total: allTransactions.length,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(allTransactions.length / limit)
-        },
-        lastUpdated: new Date().toISOString()
+        transactions: allTransactions,
+        lastUpdated: new Date(transactionsCache.lastFetch).toISOString(),
+        totalCached: transactionsCache.data.size,
+        cacheStatus: transactionsCache.data.size ? 'warm' : 'cold'
       }
-    });
+    };
+
+    res.json(formattedResponse);
 
   } catch (error) {
-    console.error('Error fetching transactions:', error);
+    console.error('Error serving transactions:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch transactions'
+      error: 'Failed to serve transactions'
     });
   }
 });
+
+// Helper function for SolanaBeach
+async function fetchTransactionsFromSolanaBeach(limit) {
+  const response = await throttledAxios({
+    method: 'get',
+    url: `https://public-api.solanabeach.io/v1/account/5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt/transactions`,
+    headers: {
+      'accept': '*/*',
+      'content-type': 'application/json',
+      'origin': 'https://solanabeach.io',
+      'referer': 'https://solanabeach.io/',
+      'sec-fetch-site': 'same-site',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-dest': 'empty',
+      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+    }
+  });
+  
+  return {
+    transactions: (response.data || []).slice(0, limit)
+  };
+}
+
+// Add these near the top with other constants
+const QUICKNODE_RATE_LIMIT = 10; // requests per second
+const BATCH_SIZE = 5; // number of transactions to process in parallel
+
+// Add a rate limiter for QuickNode
+const quickNodeRateLimiter = createRateLimiter(QUICKNODE_RATE_LIMIT);
+
+// Modified QuickNode helper function
+async function fetchTransactionsFromQuickNode(limit) {
+  const response = await quickNodeRateLimiter({
+    method: 'post',
+    url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "getSignaturesForAddress",
+      "params": [
+        "5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt",
+        { "limit": limit }
+      ]
+    }
+  });
+
+  if (!response.data?.result) return [];
+
+  // Process transactions in batches
+  const transactions = [];
+  const signatures = response.data.result;
+  
+  for (let i = 0; i < signatures.length; i += BATCH_SIZE) {
+    const batch = signatures.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map(async (tx) => {
+      try {
+        const txResponse = await quickNodeRateLimiter({
+          method: 'post',
+          url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          data: {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [
+              tx.signature,
+              {
+                "maxSupportedTransactionVersion": 0,
+                "encoding": "json"
+              }
+            ]
+          }
+        });
+
+        const txData = txResponse.data?.result;
+        return {
+          signature: tx.signature,
+          blockNumber: tx.slot,
+          timestamp: tx.blockTime * 1000,
+          status: tx.err ? 'failed' : 'success',
+          fee: txData?.meta?.fee,
+          accountKeys: txData?.transaction?.message?.accountKeys,
+          instructions: txData?.transaction?.message?.instructions,
+          logs: txData?.meta?.logMessages,
+          postBalances: txData?.meta?.postBalances,
+          preBalances: txData?.meta?.preBalances
+        };
+      } catch (error) {
+        console.error(`Error fetching transaction ${tx.signature}:`, error.message);
+        // Return basic transaction info if detailed fetch fails
+        return {
+          signature: tx.signature,
+          blockNumber: tx.slot,
+          timestamp: tx.blockTime * 1000,
+          status: tx.err ? 'failed' : 'success'
+        };
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    transactions.push(...batchResults);
+    
+    // Add a small delay between batches
+    if (i + BATCH_SIZE < signatures.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  return transactions;
+}
 
 // Get SHEKEL price data
 router.get('/rabbi/price', async (req, res) => {
