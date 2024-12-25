@@ -17,6 +17,10 @@ if (admin.apps.length === 0) {
 const db = getDatabase();
 const firebaseKosherRef = db.ref('crypto/kosher');
 
+// Replace the cache object with Firebase references
+const firebaseKosherTransactionsRef = firebaseKosherRef.child('transactions');
+const firebaseKosherBalancesRef = firebaseKosherRef.child('balances');
+
 function createRateLimiter(requestsPerSecond) {
   let lastRequest = 0;
   const minInterval = 1000 / requestsPerSecond;
@@ -158,13 +162,18 @@ router.get('/rabbi/balances', async (req, res) => {
       decimals: item.account.data.parsed.info.tokenAmount.decimals
     }));
 
+    const balanceData = {
+      tokens: formattedTokens,
+      solBalance,
+      lastUpdated: new Date().toISOString()
+    };
+
+    // Store balance data in Firebase
+    await firebaseKosherBalancesRef.set(balanceData);
+
     res.json({
       success: true,
-      data: {
-        tokens: formattedTokens,
-        solBalance,
-        lastUpdated: new Date().toISOString()
-      }
+      data: balanceData
     });
 
   } catch (error) {
@@ -182,7 +191,7 @@ let transactionsCache = {
   lastFetch: null
 };
 const FETCH_INTERVAL = 10 * 60 * 1000; // 10 minutes
-const INITIAL_FETCH_COUNT = 25;
+const INITIAL_FETCH_COUNT = 200;
 const UPDATE_FETCH_COUNT = 10; // Fetch fewer transactions during updates
 const MAX_CACHE_SIZE = 1000; // Maximum number of transactions to keep in cache
 const CLEANUP_THRESHOLD = 900; // When to trigger cleanup (90% of max)
@@ -209,19 +218,73 @@ function cleanupCache() {
 
 // Modify the warmupCache function
 async function warmupCache() {
-  console.log('Starting cache warmup...');
+  console.log('🚀 Starting cache warmup...');
   try {
-    const transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
+    // First check Firebase for existing data
+    const snapshot = await firebaseKosherTransactionsRef.once('value');
+    const existingData = snapshot.val();
     
-    // Store each transaction in the cache
-    transactions.forEach(tx => {
-      transactionsCache.data.set(tx.trans_id, tx);
-    });
+    if (existingData?.data && existingData.data.length > 0) {
+      console.log(`📦 Found ${existingData.data.length} existing transactions in Firebase`);
+      
+      // Fetch just the latest transaction to check for updates
+      const latestSignatures = await quickNodeRateLimiter({
+        method: 'post',
+        url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        data: {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "getSignaturesForAddress",
+          "params": [
+            "5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt",
+            { "limit": UPDATE_FETCH_COUNT }
+          ]
+        }
+      });
 
-    transactionsCache.lastFetch = Date.now();
-    console.log(`Cache warmup complete. Cached ${transactionsCache.data.size} transactions`);
+      if (latestSignatures.data?.result) {
+        const mostRecentStoredTx = existingData.data[0]; // Since we keep them sorted
+        const newSignatures = latestSignatures.data.result.filter(
+          sig => !existingData.data.some(tx => tx.trans_id === sig.signature)
+        );
+
+        if (newSignatures.length > 0) {
+          console.log(`🔄 Found ${newSignatures.length} new transactions to fetch`);
+          const newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
+          
+          // Merge new transactions with existing ones
+          const allTransactions = [...newTransactions, ...existingData.data]
+            .sort((a, b) => b.block_time - a.block_time)
+            .slice(0, MAX_STORED_TRANSACTIONS);
+
+          // Update Firebase with merged data
+          await firebaseKosherTransactionsRef.set({
+            data: allTransactions,
+            lastFetch: Date.now()
+          });
+          
+          console.log(`✅ Cache updated with ${allTransactions.length} total transactions`);
+        } else {
+          console.log('✨ Cache is already up to date');
+        }
+      }
+    } else {
+      console.log('🆕 No existing data found, performing initial fetch');
+      // Only perform full fetch if no data exists
+      const transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
+      
+      await firebaseKosherTransactionsRef.set({
+        data: transactions,
+        lastFetch: Date.now()
+      });
+
+      console.log(`✅ Initial cache populated with ${transactions.length} transactions`);
+    }
   } catch (error) {
-    console.error('Error during cache warmup:', error);
+    console.error('❌ Error during cache warmup:', error);
   }
 }
 
@@ -232,16 +295,24 @@ cron.schedule(CRON_SCHEDULE, async () => {
     const newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
     console.log(`Fetched ${newTransactions.length} new transactions`);
 
-    // Add new transactions to cache
-    newTransactions.forEach(tx => {
-      if (!transactionsCache.data.has(tx.trans_id)) {
-        transactionsCache.data.set(tx.trans_id, tx);
-      }
+    // Get existing transactions from Firebase
+    const snapshot = await firebaseKosherTransactionsRef.once('value');
+    const existingData = snapshot.val() || { data: [] };
+    
+    // Merge new transactions with existing ones
+    const mergedTransactions = [...newTransactions, ...existingData.data]
+      .filter((tx, index, self) => 
+        index === self.findIndex(t => t.trans_id === tx.trans_id)
+      )
+      .slice(0, MAX_CACHE_SIZE); // Keep only the most recent transactions
+
+    // Update Firebase
+    await firebaseKosherTransactionsRef.set({
+      data: mergedTransactions,
+      lastFetch: Date.now()
     });
 
-    transactionsCache.lastFetch = Date.now();
-    cleanupCache();
-    console.log(`Cache updated. New size: ${transactionsCache.data.size}`);
+    console.log(`Cache updated. New size: ${mergedTransactions.length}`);
   } catch (error) {
     console.error('Error in scheduled cache update:', error);
   }
@@ -250,13 +321,27 @@ cron.schedule(CRON_SCHEDULE, async () => {
 // Modify the transactions endpoint
 router.get('/rabbi/transactions', async (req, res) => {
   try {
-    if (transactionsCache.data.size === 0) {
+    const snapshot = await firebaseKosherTransactionsRef.once('value');
+    const data = snapshot.val();
+
+    if (!data || !data.data || data.data.length === 0) {
       await warmupCache();
+      const newSnapshot = await firebaseKosherTransactionsRef.once('value');
+      const newData = newSnapshot.val();
+      
+      if (!newData || !newData.data) {
+        throw new Error('Failed to initialize transaction data');
+      }
+      
+      return res.json({
+        success: true,
+        data: newData.data,
+        count: newData.data.length
+      });
     }
 
-    // Return all transactions from cache, sorted by block time
-    const transactions = Array.from(transactionsCache.data.values())
-      .sort((a, b) => b.block_time - a.block_time);
+    // Return transactions sorted by block time
+    const transactions = data.data.sort((a, b) => b.block_time - a.block_time);
 
     res.json({
       success: true,
@@ -307,6 +392,8 @@ const quickNodeRateLimiter = createRateLimiter(QUICKNODE_RATE_LIMIT);
 
 // Modified QuickNode helper function
 async function fetchTransactionsFromQuickNode(limit) {
+  console.log(`🔍 Fetching up to ${limit} transactions...`);
+  
   const response = await quickNodeRateLimiter({
     method: 'post',
     url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
@@ -324,15 +411,38 @@ async function fetchTransactionsFromQuickNode(limit) {
     }
   });
 
-  if (!response.data?.result) return [];
+  if (!response.data?.result) {
+    console.log('❌ No signatures found');
+    return [];
+  }
 
   const transactions = [];
   const signatures = response.data.result;
+  console.log(`📝 Found ${signatures.length} signatures to process`);
+  
+  // Get existing transactions from Firebase
+  const snapshot = await firebaseKosherTransactionsRef.once('value');
+  const existingData = snapshot.val()?.data || [];
+  
+  // Create a Map of existing transactions for quick lookup
+  const existingTxMap = new Map(
+    existingData.map(tx => [tx.trans_id, tx])
+  );
+  
+  console.log(`📦 Loaded ${existingTxMap.size} existing transactions from Firebase`);
   
   for (let i = 0; i < signatures.length; i++) {
     const tx = signatures[i];
-    let retries = 0;
     
+    // Check if we already have this transaction in Firebase
+    if (existingTxMap.has(tx.signature)) {
+      console.log(`✅ Using cached data for transaction ${tx.signature}`);
+      transactions.push(existingTxMap.get(tx.signature));
+      continue;
+    }
+    
+    console.log(`🔄 Fetching new transaction data for ${tx.signature}`);
+    let retries = 0;
     while (retries < MAX_RETRIES) {
       try {
         await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
@@ -358,7 +468,10 @@ async function fetchTransactionsFromQuickNode(limit) {
         });
 
         const txData = txResponse.data?.result;
-        if (!txData) break;
+        if (!txData) {
+          console.log(`⚠️ No transaction data found for ${tx.signature}`);
+          break;
+        }
 
         const tokenTransfers = [];
         if (txData?.meta?.preTokenBalances && txData?.meta?.postTokenBalances) {
@@ -477,10 +590,13 @@ async function fetchTransactionsFromQuickNode(limit) {
         }
 
         if (tokenTransfers.length > 0) {
+          console.log(`✨ Processed ${tokenTransfers.length} token transfers for ${tx.signature}`);
           // Store each transfer individually
           tokenTransfers.forEach(transfer => {
             transactions.push(transfer);
           });
+        } else {
+          console.log(`ℹ️ No token transfers found for ${tx.signature}`);
         }
         
         break;
@@ -488,16 +604,20 @@ async function fetchTransactionsFromQuickNode(limit) {
       } catch (error) {
         retries++;
         if (error.response?.status === 429) {
+          console.log(`⏳ Rate limited, retry ${retries}/${MAX_RETRIES} for ${tx.signature}`);
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retries));
         } else if (retries === MAX_RETRIES) {
+          console.log(`❌ Max retries reached for ${tx.signature}`);
           break;
         } else {
+          console.error(`❌ Error processing ${tx.signature}:`, error);
           throw error;
         }
       }
     }
   }
 
+  console.log(`📊 Total transactions processed: ${transactions.length}`);
   return transactions;
 }
 
