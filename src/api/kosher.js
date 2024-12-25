@@ -207,79 +207,62 @@ function cleanupCache() {
   }
 }
 
-// Add near other cache-related code
+// Modify the warmupCache function
 async function warmupCache() {
   console.log('Starting cache warmup...');
   try {
     const transactions = await fetchTransactionsFromQuickNode(INITIAL_FETCH_COUNT);
+    
+    // Store each transaction in the cache
+    transactions.forEach(tx => {
+      transactionsCache.data.set(tx.trans_id, tx);
+    });
 
-    if (transactions.length > 0) {
-      transactions.forEach(tx => {
-        transactionsCache.data.set(tx.signature, tx);
-      });
-      transactionsCache.lastFetch = Date.now();
-      console.log(`Cache warmup complete. Source: quicknode, Initial cache size: ${transactionsCache.data.size}`);
-    } else {
-      console.log('Cache warmup completed but no transactions were fetched');
-    }
+    transactionsCache.lastFetch = Date.now();
+    console.log(`Cache warmup complete. Cached ${transactionsCache.data.size} transactions`);
   } catch (error) {
     console.error('Error during cache warmup:', error);
   }
 }
 
-// Modify the cron job to only use QuickNode
+// Modify the cron job
 cron.schedule(CRON_SCHEDULE, async () => {
   console.log('Running scheduled cache update...');
   try {
     const newTransactions = await fetchTransactionsFromQuickNode(UPDATE_FETCH_COUNT);
+    console.log(`Fetched ${newTransactions.length} new transactions`);
 
-    // Log the number of new transactions before processing
-    console.log(`Fetched ${newTransactions.length} new transactions from quicknode`);
+    // Add new transactions to cache
+    newTransactions.forEach(tx => {
+      if (!transactionsCache.data.has(tx.trans_id)) {
+        transactionsCache.data.set(tx.trans_id, tx);
+      }
+    });
 
-    if (newTransactions.length > 0) {
-      // Keep existing transactions
-      const existingTransactions = Array.from(transactionsCache.data.values());
-      
-      // Add new transactions
-      newTransactions.forEach(tx => {
-        if (!transactionsCache.data.has(tx.signature)) {
-          transactionsCache.data.set(tx.signature, tx);
-        }
-      });
-
-      transactionsCache.lastFetch = Date.now();
-      cleanupCache();
-      
-      // Log the before and after cache sizes
-      console.log(`Cache updated. Previous size: ${existingTransactions.length}, New size: ${transactionsCache.data.size}`);
-    }
+    transactionsCache.lastFetch = Date.now();
+    cleanupCache();
+    console.log(`Cache updated. New size: ${transactionsCache.data.size}`);
   } catch (error) {
     console.error('Error in scheduled cache update:', error);
   }
 });
 
-// Modify the endpoint to handle cold starts better
+// Modify the transactions endpoint
 router.get('/rabbi/transactions', async (req, res) => {
   try {
-    // If cache is empty, wait for warmup
-    if (!transactionsCache.data.size) {
+    if (transactionsCache.data.size === 0) {
       await warmupCache();
     }
 
-    const allTransactions = Array.from(transactionsCache.data.values())
-      .sort((a, b) => b.timestamp - a.timestamp);
+    // Return all transactions from cache, sorted by block time
+    const transactions = Array.from(transactionsCache.data.values())
+      .sort((a, b) => b.block_time - a.block_time);
 
-    const formattedResponse = {
+    res.json({
       success: true,
-      data: {
-        transactions: allTransactions,
-        lastUpdated: new Date(transactionsCache.lastFetch).toISOString(),
-        totalCached: transactionsCache.data.size,
-        cacheStatus: transactionsCache.data.size ? 'warm' : 'cold'
-      }
-    };
-
-    res.json(formattedResponse);
+      data: transactions,
+      count: transactions.length
+    });
 
   } catch (error) {
     console.error('Error serving transactions:', error);
@@ -314,7 +297,10 @@ async function fetchTransactionsFromSolanaBeach(limit) {
 
 // Add these near the top with other constants
 const QUICKNODE_RATE_LIMIT = 10; // requests per second
-const BATCH_SIZE = 5; // number of transactions to process in parallel
+const BATCH_SIZE = 1; // Process one at a time
+const RATE_LIMIT_DELAY = 1000; // 1 second between requests
+const MAX_RETRIES = 5;
+const RETRY_DELAY = 3000; // 3 seconds
 
 // Add a rate limiter for QuickNode
 const quickNodeRateLimiter = createRateLimiter(QUICKNODE_RATE_LIMIT);
@@ -340,14 +326,17 @@ async function fetchTransactionsFromQuickNode(limit) {
 
   if (!response.data?.result) return [];
 
-  // Process transactions in batches
   const transactions = [];
   const signatures = response.data.result;
   
-  for (let i = 0; i < signatures.length; i += BATCH_SIZE) {
-    const batch = signatures.slice(i, i + BATCH_SIZE);
-    const batchPromises = batch.map(async (tx) => {
+  for (let i = 0; i < signatures.length; i++) {
+    const tx = signatures[i];
+    let retries = 0;
+    
+    while (retries < MAX_RETRIES) {
       try {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+        
         const txResponse = await quickNodeRateLimiter({
           method: 'post',
           url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
@@ -362,43 +351,150 @@ async function fetchTransactionsFromQuickNode(limit) {
               tx.signature,
               {
                 "maxSupportedTransactionVersion": 0,
-                "encoding": "json"
+                "encoding": "jsonParsed"
               }
             ]
           }
         });
 
         const txData = txResponse.data?.result;
-        return {
-          signature: tx.signature,
-          blockNumber: tx.slot,
-          timestamp: tx.blockTime * 1000,
-          status: tx.err ? 'failed' : 'success',
-          fee: txData?.meta?.fee,
-          accountKeys: txData?.transaction?.message?.accountKeys,
-          instructions: txData?.transaction?.message?.instructions,
-          logs: txData?.meta?.logMessages,
-          postBalances: txData?.meta?.postBalances,
-          preBalances: txData?.meta?.preBalances
-        };
-      } catch (error) {
-        console.error(`Error fetching transaction ${tx.signature}:`, error.message);
-        // Return basic transaction info if detailed fetch fails
-        return {
-          signature: tx.signature,
-          blockNumber: tx.slot,
-          timestamp: tx.blockTime * 1000,
-          status: tx.err ? 'failed' : 'success'
-        };
-      }
-    });
+        if (!txData) break;
 
-    const batchResults = await Promise.all(batchPromises);
-    transactions.push(...batchResults);
-    
-    // Add a small delay between batches
-    if (i + BATCH_SIZE < signatures.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+        const tokenTransfers = [];
+        if (txData?.meta?.preTokenBalances && txData?.meta?.postTokenBalances) {
+          const preBalances = new Map(txData.meta.preTokenBalances.map(b => [`${b.accountIndex}-${b.mint}`, b]));
+          const postBalances = new Map(txData.meta.postTokenBalances.map(b => [`${b.accountIndex}-${b.mint}`, b]));
+          
+          // Track all token changes for this wallet
+          const walletChanges = new Map();
+          
+          // Process all account changes
+          const walletAddress = "5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt";
+          
+          // First, check for SOL balance changes
+          if (txData.meta?.preBalances && txData.meta?.postBalances) {
+            // Find our wallet's index in the accounts array
+            const walletIndex = txData.transaction.message.accountKeys.findIndex(
+              key => key.pubkey === walletAddress
+            );
+            
+            if (walletIndex !== -1) {
+              const preSolBalance = txData.meta.preBalances[walletIndex];
+              const postSolBalance = txData.meta.postBalances[walletIndex];
+              const solChange = (postSolBalance - preSolBalance) / 1e9; // Convert from lamports to SOL
+              
+              // Only track if there's a meaningful change (excluding fees)
+              if (Math.abs(solChange) > 0.000001 && Math.abs(solChange) !== txData.meta.fee / 1e9) {
+                walletChanges.set("So11111111111111111111111111111111111111112", {
+                  token_address: "So11111111111111111111111111111111111111112",
+                  token_decimals: 9,
+                  net_amount: solChange
+                });
+              }
+            }
+          }
+
+          // Then process token accounts (existing code)
+          txData.meta.postTokenBalances.forEach(postBalance => {
+            const preBalance = txData.meta.preTokenBalances.find(
+              pre => pre.accountIndex === postBalance.accountIndex && pre.mint === postBalance.mint
+            );
+            
+            if (preBalance && postBalance.owner === walletAddress) {
+              const change = postBalance.uiTokenAmount.uiAmount - preBalance.uiTokenAmount.uiAmount;
+              
+              if (!walletChanges.has(postBalance.mint)) {
+                walletChanges.set(postBalance.mint, {
+                  token_address: postBalance.mint,
+                  token_decimals: postBalance.uiTokenAmount.decimals,
+                  net_amount: 0
+                });
+              }
+              
+              walletChanges.get(postBalance.mint).net_amount += change;
+            }
+          });
+          
+          // Convert to swap format if we have exactly one decrease and one increase
+          const decreases = [];
+          const increases = [];
+          walletChanges.forEach((change, mint) => {
+            if (Math.abs(change.net_amount) >= 0.000001) {
+              if (change.net_amount < 0) {
+                decreases.push({
+                  token_address: change.token_address,
+                  token_decimals: change.token_decimals,
+                  amount: Math.abs(change.net_amount)
+                });
+              } else {
+                increases.push({
+                  token_address: change.token_address,
+                  token_decimals: change.token_decimals,
+                  amount: change.net_amount
+                });
+              }
+            }
+          });
+
+          if (decreases.length === 1 && increases.length === 1) {
+            tokenTransfers.push({
+              block_id: tx.slot,
+              block_time: tx.blockTime,
+              time: new Date(tx.blockTime * 1000).toISOString(),
+              trans_id: tx.signature,
+              type: 'swap',
+              from_token: {
+                token_address: decreases[0].token_address,
+                token_decimals: decreases[0].token_decimals,
+                amount: Math.round(decreases[0].amount * Math.pow(10, decreases[0].token_decimals))
+              },
+              to_token: {
+                token_address: increases[0].token_address,
+                token_decimals: increases[0].token_decimals,
+                amount: Math.round(increases[0].amount * Math.pow(10, increases[0].token_decimals))
+              },
+              fee: txData?.meta?.fee || 0
+            });
+          } else if (decreases.length > 0 || increases.length > 0) {
+            // Handle non-swap transfers
+            walletChanges.forEach((change, mint) => {
+              if (Math.abs(change.net_amount) >= 0.000001) {
+                tokenTransfers.push({
+                  block_id: tx.slot,
+                  block_time: tx.blockTime,
+                  time: new Date(tx.blockTime * 1000).toISOString(),
+                  trans_id: tx.signature,
+                  type: 'transfer',
+                  token_address: change.token_address,
+                  token_decimals: change.token_decimals,
+                  amount: Math.round(Math.abs(change.net_amount) * Math.pow(10, change.token_decimals)),
+                  change_type: change.net_amount > 0 ? 'inc' : 'dec',
+                  fee: txData?.meta?.fee || 0
+                });
+              }
+            });
+          }
+        }
+
+        if (tokenTransfers.length > 0) {
+          // Store each transfer individually
+          tokenTransfers.forEach(transfer => {
+            transactions.push(transfer);
+          });
+        }
+        
+        break;
+        
+      } catch (error) {
+        retries++;
+        if (error.response?.status === 429) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retries));
+        } else if (retries === MAX_RETRIES) {
+          break;
+        } else {
+          throw error;
+        }
+      }
     }
   }
 
