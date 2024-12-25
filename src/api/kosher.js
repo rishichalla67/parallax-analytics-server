@@ -111,65 +111,13 @@ async function getAllTransactions(address) {
 
 // Get token balances
 router.get('/rabbi/balances', async (req, res) => {
-  const address = '5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt';
-  
   try {
-    // Fetch token balances using QuickNode
-    const tokensResponse = await quickNodeRateLimiter({
-      method: 'post',
-      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getTokenAccountsByOwner",
-        "params": [
-          address,
-          {
-            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-          },
-          {
-            "encoding": "jsonParsed"
-          }
-        ]
-      }
-    });
+    const snapshot = await firebaseKosherBalancesRef.once('value');
+    const balanceData = snapshot.val();
 
-    // Fetch SOL balance using QuickNode
-    const solResponse = await quickNodeRateLimiter({
-      method: 'post',
-      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getBalance",
-        "params": [address]
-      }
-    });
-
-    const solBalance = solResponse.data?.result?.value / 1e9; // Convert lamports to SOL
-    const tokens = tokensResponse.data?.result?.value || [];
-
-    // Format token data
-    const formattedTokens = tokens.map(item => ({
-      mint: item.account.data.parsed.info.mint,
-      amount: item.account.data.parsed.info.tokenAmount.uiAmount,
-      decimals: item.account.data.parsed.info.tokenAmount.decimals
-    }));
-
-    const balanceData = {
-      tokens: formattedTokens,
-      solBalance,
-      lastUpdated: new Date().toISOString()
-    };
-
-    // Store balance data in Firebase
-    await firebaseKosherBalancesRef.set(balanceData);
+    if (!balanceData) {
+      throw new Error('No balance data found');
+    }
 
     res.json({
       success: true,
@@ -177,7 +125,7 @@ router.get('/rabbi/balances', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching balances:', error);
+    console.error('Error serving balances:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch token balances'
@@ -690,6 +638,78 @@ warmupCache().then(() => {
   console.log('Initial cache warmup completed on server start');
 }).catch(error => {
   console.error('Error during initial cache warmup:', error);
+});
+
+// Add near the top with other constants
+const BALANCES_UPDATE_INTERVAL = '*/5 * * * *'; // Updates every 5 minutes
+
+// Add this cron job alongside the other cron job
+cron.schedule(BALANCES_UPDATE_INTERVAL, async () => {
+  console.log('🔄 Running scheduled balances update...');
+  const address = '5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt';
+  
+  try {
+    // Fetch token balances using QuickNode
+    const tokensResponse = await quickNodeRateLimiter({
+      method: 'post',
+      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenAccountsByOwner",
+        "params": [
+          address,
+          {
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          },
+          {
+            "encoding": "jsonParsed"
+          }
+        ]
+      }
+    });
+
+    // Fetch SOL balance using QuickNode
+    const solResponse = await quickNodeRateLimiter({
+      method: 'post',
+      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getBalance",
+        "params": [address]
+      }
+    });
+
+    const solBalance = solResponse.data?.result?.value / 1e9; // Convert lamports to SOL
+    const tokens = tokensResponse.data?.result?.value || [];
+
+    // Format token data
+    const formattedTokens = tokens.map(item => ({
+      mint: item.account.data.parsed.info.mint,
+      amount: item.account.data.parsed.info.tokenAmount.uiAmount,
+      decimals: item.account.data.parsed.info.tokenAmount.decimals
+    }));
+
+    const balanceData = {
+      tokens: formattedTokens,
+      solBalance,
+      lastUpdated: new Date().toISOString()
+    };
+
+    // Store balance data in Firebase
+    await firebaseKosherBalancesRef.set(balanceData);
+    console.log('✅ Balances updated in Firebase');
+
+  } catch (error) {
+    console.error('❌ Error updating balances:', error);
+  }
 });
 
 module.exports = router;
