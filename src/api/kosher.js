@@ -116,11 +116,23 @@ let balancesCache = {
 };
 const BALANCES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
+// Add near the top with other constants
+const BIRDEYE_BASE_URL = 'https://public-api.birdeye.so';
+
 // Replace the /rabbi/balances endpoint
 router.get('/rabbi/balances', async (req, res) => {
   try {
+    // Add debugging
+    console.log('BIRDEYE_API_KEY:', process.env.BIRDEYE_API_KEY);
+    console.log('All env variables:', process.env);
+
     const now = Date.now();
     
+    // Verify API key exists
+    if (!process.env.BIRDEYE_API_KEY) {
+      throw new Error('Birdeye API key is not configured in environment variables');
+    }
+
     // Check if cache is valid
     if (balancesCache.data && balancesCache.lastFetch && 
         (now - balancesCache.lastFetch) < BALANCES_CACHE_DURATION) {
@@ -133,55 +145,38 @@ router.get('/rabbi/balances', async (req, res) => {
     // Fetch fresh data if cache is invalid
     const address = '5Rn9eECNAF8YHgyri7BUe5pbvP7KwZqNF25cDc3rExwt';
     
-    // Fetch token balances using QuickNode
-    const tokensResponse = await quickNodeRateLimiter({
-      method: 'post',
-      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
-      headers: {
-        'Content-Type': 'application/json',
+    // Fetch portfolio data from Birdeye
+    const birdeyeResponse = await axios.get(`${BIRDEYE_BASE_URL}/v1/wallet/token_list`, {
+      params: {
+        wallet: address,
+        chain: 'solana'
       },
-      data: {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getTokenAccountsByOwner",
-        "params": [
-          address,
-          {
-            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-          },
-          {
-            "encoding": "jsonParsed"
-          }
-        ]
+      headers: {
+        'X-API-KEY': process.env.BIRDEYE_API_KEY
       }
     });
 
-    // Fetch SOL balance using QuickNode
-    const solResponse = await quickNodeRateLimiter({
-      method: 'post',
-      url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getBalance",
-        "params": [address]
-      }
-    });
-
-    const solBalance = solResponse.data?.result?.value / 1e9;
-    const tokens = tokensResponse.data?.result?.value || [];
-
+    const responseData = birdeyeResponse.data?.data;
+    
+    // Format the response
     const balanceData = {
-      tokens: tokens.map(item => ({
-        mint: item.account.data.parsed.info.mint,
-        amount: item.account.data.parsed.info.tokenAmount.uiAmount,
-        decimals: item.account.data.parsed.info.tokenAmount.decimals
+      wallet: responseData.wallet,
+      tokens: responseData.items.map(token => ({
+        mint: token.address,
+        amount: token.uiAmount,
+        decimals: token.decimals,
+        symbol: token.symbol,
+        name: token.name,
+        icon: token.icon,
+        price: token.priceUsd,
+        value: token.valueUsd,
+        rawAmount: token.balance
       })),
-      solBalance,
-      lastUpdated: new Date().toISOString()
+      totalValue: responseData.totalUsd,
+      lastUpdated: new Date().toISOString(),
+      solBalance: responseData.items.find(token => 
+        token.address === "So11111111111111111111111111111111111111111"
+      )?.uiAmount || 0
     };
 
     // Update cache
@@ -197,6 +192,16 @@ router.get('/rabbi/balances', async (req, res) => {
 
   } catch (error) {
     console.error('Error serving balances:', error);
+    
+    // If we have cached data, return it
+    if (balancesCache.data) {
+      return res.json({
+        success: true,
+        data: balancesCache.data,
+        fromCache: true
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: 'Failed to fetch token balances'
