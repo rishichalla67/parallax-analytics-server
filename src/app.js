@@ -10,6 +10,7 @@ const api = require('./api');
 const coingecko = require('./api/coingecko');
 const ophir = require('./api/ophir');
 const kosher = require('./api/kosher');
+const aioraRouter = require('./api/aiora');
 
 const app = express();
 
@@ -21,6 +22,8 @@ app.use(express.json());
 app.use('/', coingecko);
 app.use('/ophir', ophir);
 app.use('/kosher', kosher);
+app.use('/', aioraRouter);
+// app.use('/api', aioraRouter);
 // app.use('/api/v1', api);
 
 app.use(middlewares.notFound);
