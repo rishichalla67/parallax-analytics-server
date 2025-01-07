@@ -24,7 +24,6 @@ async function fetchImagePrompts(address) {
   try {
     console.log('Fetching signatures for address:', address);
     
-    // Get all signatures for the address directly
     const response = await throttledAxios({
       method: 'post',
       url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
@@ -44,13 +43,37 @@ async function fetchImagePrompts(address) {
 
     // Filter signatures that have memos
     const signatureDetails = response.data?.result || [];
-    const promptsWithMemos = signatureDetails
-      .filter(sig => sig.memo && sig.memo.includes('Image Gen Prompt'))
-      .map(sig => ({
-        txHash: sig.signature,
-        memo: sig.memo,
-        timestamp: new Date(sig.blockTime * 1000).toISOString()
-      }));
+    const memoSignatures = signatureDetails.filter(sig => 
+      sig.memo && sig.memo.includes('Image Gen Prompt')
+    );
+
+    // Fetch full transaction details to get sender addresses
+    const promptsWithMemos = await Promise.all(
+      memoSignatures.map(async (sig) => {
+        const txnResponse = await throttledAxios({
+          method: 'post',
+          url: 'https://cold-black-ensemble.solana-mainnet.quiknode.pro/b0951b93f19937b54d611188abdf253e661902f3/',
+          headers: { 'Content-Type': 'application/json' },
+          data: {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [
+              sig.signature,
+              { "encoding": "jsonParsed", "maxSupportedTransactionVersion": 0 }
+            ]
+          }
+        });
+
+        const txn = txnResponse.data?.result;
+        return {
+          txHash: sig.signature,
+          sender: txn.transaction.message.accountKeys[0].pubkey, // First account is the fee payer/sender
+          memo: sig.memo,
+          timestamp: new Date(sig.blockTime * 1000).toISOString()
+        };
+      })
+    );
 
     console.log('Found prompts with memos:', promptsWithMemos.length);
     return promptsWithMemos;
