@@ -962,7 +962,7 @@ router.get('/funds', async (req, res) => {
           (fund.fundManagers ? [fund.fundManagers] : []),
         name: fund.name || '',
         balances: balanceData,
-        enough_btc_weight: checkBtcWeight(balanceData)
+        has_enough_btc_weight: checkBtcWeight(balanceData)
       };
     });
 
@@ -1030,7 +1030,7 @@ router.get('/funds/:fundId', async (req, res) => {
       fundToken: fund.fundToken || '',
       name: fund.name || '',
       balances: balanceData,
-      enough_btc_weight: checkBtcWeight(balanceData)
+      has_enough_btc_weight: checkBtcWeight(balanceData)
     };
 
     console.log('Processed fund data:', response);
