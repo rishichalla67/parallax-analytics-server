@@ -905,6 +905,17 @@ async function processTokenBalances(balances) {
   };
 }
 
+// Helper function to check BTC weight
+function checkBtcWeight(balances) {
+  if (!balances?.tokens) return false;
+  
+  const btcToken = balances.tokens.find(t => 
+    t.address.toLowerCase() === '0x7126b7629e5c0b4e645c3859e1141838accd125b'.toLowerCase()
+  );
+  
+  return btcToken ? btcToken.weight > 30 : false;
+}
+
 // Update the funds endpoint
 router.get('/funds', async (req, res) => {
   try {
@@ -950,7 +961,8 @@ router.get('/funds', async (req, res) => {
         fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
           (fund.fundManagers ? [fund.fundManagers] : []),
         name: fund.name || '',
-        balances: balanceData
+        balances: balanceData,
+        enough_btc_weight: checkBtcWeight(balanceData)
       };
     });
 
@@ -1017,7 +1029,8 @@ router.get('/funds/:fundId', async (req, res) => {
         (fund.fundManagers ? [fund.fundManagers] : []),
       fundToken: fund.fundToken || '',
       name: fund.name || '',
-      balances: balanceData
+      balances: balanceData,
+      enough_btc_weight: checkBtcWeight(balanceData)
     };
 
     console.log('Processed fund data:', response);
