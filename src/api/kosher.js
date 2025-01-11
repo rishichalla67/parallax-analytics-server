@@ -751,14 +751,17 @@ async function getEthPrice() {
 async function getTokenPrice(tokenAddress) {
   // Special case for ETH
   if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
-    return getEthPrice();
+    return {
+      price: await getEthPrice(),
+      logoURI: "https://assets.coingecko.com/coins/images/279/large/ethereum.png"
+    };
   }
 
   const now = Date.now();
   const cachedData = tokenPriceCache.get(tokenAddress);
   
   if (cachedData && (now - cachedData.timestamp) < PRICE_CACHE_DURATION) {
-    return cachedData.price;
+    return cachedData;
   }
 
   try {
@@ -770,17 +773,19 @@ async function getTokenPrice(tokenAddress) {
       }
     });
 
-    if (response.data?.data?.price) {
-      tokenPriceCache.set(tokenAddress, {
-        price: response.data.data.price,
+    if (response.data?.data) {
+      const data = {
+        price: response.data.data.price || 0,
+        logoURI: response.data.data.logoURI || '',
         timestamp: now
-      });
-      return response.data.data.price;
+      };
+      tokenPriceCache.set(tokenAddress, data);
+      return data;
     }
-    return 0;
+    return { price: 0, logoURI: '' };
   } catch (error) {
     console.error(`Error fetching price for token ${tokenAddress}:`, error);
-    return 0;
+    return { price: 0, logoURI: '' };
   }
 }
 
@@ -853,11 +858,11 @@ async function processTokenBalances(balances) {
   if (balances?.items) {
     // First pass: calculate total value
     for (const token of balances.items) {
-      let price = 0;
+      let tokenData = { price: 0, logoURI: '' };
       if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
-        price = await getTokenPrice(token.address);
+        tokenData = await getTokenPrice(token.address);
       }
-      const value = token.uiAmount * price;
+      const value = token.uiAmount * tokenData.price;
       if (value > 0) {  // Only count non-zero values in total
         totalValue += value;
       }
@@ -865,12 +870,12 @@ async function processTokenBalances(balances) {
 
     // Second pass: create token objects with weights
     tokens = await Promise.all(balances.items.map(async token => {
-      let price = 0;
+      let tokenData = { price: 0, logoURI: '' };
       if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
-        price = await getTokenPrice(token.address);
+        tokenData = await getTokenPrice(token.address);
       }
       
-      const value = token.uiAmount * price;
+      const value = token.uiAmount * tokenData.price;
       const weight = totalValue > 0 ? (value / totalValue * 100) : 0;
       
       return {
@@ -880,9 +885,10 @@ async function processTokenBalances(balances) {
         decimals: token.decimals,
         balance: token.balance,
         uiAmount: token.uiAmount,
-        price,
+        price: tokenData.price,
         value,
-        weight: Number(weight.toFixed(2)) // Round to 2 decimal places
+        weight: Number(weight.toFixed(2)), // Round to 2 decimal places
+        logoURI: tokenData.logoURI
       };
     }));
 
