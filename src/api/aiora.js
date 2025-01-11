@@ -2,23 +2,40 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
-// Rate limiter helper
-function createRateLimiter(requestsPerSecond) {
+// Rate limiter helper with retry logic
+function createRateLimiter(requestsPerSecond, maxRetries = 3) {
   let lastRequest = 0;
   const minInterval = 1000 / requestsPerSecond;
 
   return async function rateLimitedRequest(config) {
     const now = Date.now();
     const timeToWait = Math.max(0, lastRequest + minInterval - now);
+    
     if (timeToWait > 0) {
       await new Promise(resolve => setTimeout(resolve, timeToWait));
     }
-    lastRequest = Date.now();
-    return axios(config);
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        lastRequest = Date.now();
+        const response = await axios(config);
+        return response;
+      } catch (error) {
+        if (error.response?.status === 429) {
+          const backoffTime = Math.pow(2, attempt) * 1000; // Exponential backoff
+          console.log(`Rate limited, waiting ${backoffTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, backoffTime));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error('Max retries exceeded');
   };
 }
 
-const throttledAxios = createRateLimiter(0.5); // 1 request per 2 seconds
+// Increase rate limit to match QuickNode's limit, but stay conservative
+const throttledAxios = createRateLimiter(10); // 10 requests per second (below QuickNode's 15/s limit)
 
 async function fetchImagePrompts(address) {
   try {
