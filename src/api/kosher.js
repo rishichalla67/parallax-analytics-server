@@ -845,6 +845,60 @@ async function updateFirestoreBalances(fundId, balanceData) {
   }
 }
 
+// Helper function to calculate token weights
+async function processTokenBalances(balances) {
+  let totalValue = 0;
+  let tokens = [];
+  
+  if (balances?.items) {
+    // First pass: calculate total value
+    for (const token of balances.items) {
+      let price = 0;
+      if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
+        price = await getTokenPrice(token.address);
+      }
+      const value = token.uiAmount * price;
+      if (value > 0) {  // Only count non-zero values in total
+        totalValue += value;
+      }
+    }
+
+    // Second pass: create token objects with weights
+    tokens = await Promise.all(balances.items.map(async token => {
+      let price = 0;
+      if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
+        price = await getTokenPrice(token.address);
+      }
+      
+      const value = token.uiAmount * price;
+      const weight = totalValue > 0 ? (value / totalValue * 100) : 0;
+      
+      return {
+        address: token.address,
+        name: token.name || 'Unknown',
+        symbol: token.symbol || 'Unknown',
+        decimals: token.decimals,
+        balance: token.balance,
+        uiAmount: token.uiAmount,
+        price,
+        value,
+        weight: Number(weight.toFixed(2)) // Round to 2 decimal places
+      };
+    }));
+
+    // Filter out zero balances
+    tokens = tokens.filter(t => t.uiAmount > 0);
+    
+    // Sort by weight descending
+    tokens.sort((a, b) => b.weight - a.weight);
+  }
+
+  return {
+    totalValue: Number(totalValue.toFixed(2)),
+    tokens
+  };
+}
+
 // Update the funds endpoint
 router.get('/funds', async (req, res) => {
   try {
@@ -872,38 +926,7 @@ router.get('/funds', async (req, res) => {
       if (needsUpdate) {
         console.log(`Fetching fresh balances for fund ${fundId}`);
         const balances = await getWalletBalances(fund.fundContractAddress || fundId);
-        
-        // Calculate total value in USD
-        let totalValue = 0;
-        let tokens = [];
-        
-        if (balances?.items) {
-          tokens = await Promise.all(balances.items.map(async token => {
-            let price = 0;
-            if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
-              price = await getTokenPrice(token.address);
-            }
-            
-            const value = token.uiAmount * price;
-            totalValue += value;
-            
-            return {
-              address: token.address,
-              name: token.name || 'Unknown',
-              symbol: token.symbol || 'Unknown',
-              decimals: token.decimals,
-              balance: token.balance,
-              uiAmount: token.uiAmount,
-              price,
-              value
-            };
-          }));
-        }
-
-        balanceData = {
-          totalValue,
-          tokens: tokens.filter(t => t.uiAmount > 0) // Only include tokens with non-zero balance
-        };
+        balanceData = await processTokenBalances(balances);
 
         // Update Firestore with new balance data
         await updateFirestoreBalances(fundId, balanceData);
@@ -938,6 +961,71 @@ router.get('/funds', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch funds data'
+    });
+  }
+});
+
+// Update the single fund endpoint
+router.get('/funds/:fundId', async (req, res) => {
+  try {
+    const { fundId } = req.params;
+    console.log(`Fetching data for fund ${fundId}...`);
+    
+    const fundDoc = await firestore.collection('funds').doc(fundId).get();
+    
+    if (!fundDoc.exists) {
+      console.log(`Fund ${fundId} not found`);
+      return res.status(404).json({
+        success: false,
+        error: 'Fund not found'
+      });
+    }
+
+    const fund = fundDoc.data();
+    let balanceData = null;
+
+    // Check if we need to update Firestore
+    const needsUpdate = await shouldUpdateFirestore(fundId);
+    
+    if (needsUpdate) {
+      console.log(`Fetching fresh balances for fund ${fundId}`);
+      const balances = await getWalletBalances(fund.fundContractAddress || fundId);
+      balanceData = await processTokenBalances(balances);
+
+      // Update Firestore with new balance data
+      await updateFirestoreBalances(fundId, balanceData);
+    } else {
+      // Use cached data from Firestore
+      console.log(`Using cached balances for fund ${fundId}`);
+      balanceData = fund.balances;
+    }
+
+    const response = {
+      id: fundId,
+      contractAddress: fund.fundContractAddress || fundId,
+      baseToken: fund.baseToken || '',
+      chain: fund.chain || '',
+      createdAt: fund.createdAt || '',
+      description: fund.description || '',
+      fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
+        (fund.fundManagers ? [fund.fundManagers] : []),
+      fundToken: fund.fundToken || '',
+      name: fund.name || '',
+      balances: balanceData
+    };
+
+    console.log('Processed fund data:', response);
+
+    res.json({
+      success: true,
+      data: response
+    });
+
+  } catch (error) {
+    console.error(`Error fetching fund ${req.params.fundId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch fund data'
     });
   }
 });
@@ -983,98 +1071,37 @@ router.post('/funds', async (req, res) => {
   }
 });
 
-// Add new endpoint for specific fund
-router.get('/funds/:fundId', async (req, res) => {
+// Change cache clear endpoint from POST to GET
+router.get('/clear-cache', async (req, res) => {
   try {
-    const { fundId } = req.params;
-    console.log(`Fetching data for fund ${fundId}...`);
-    
-    const fundDoc = await firestore.collection('funds').doc(fundId).get();
-    
-    if (!fundDoc.exists) {
-      console.log(`Fund ${fundId} not found`);
-      return res.status(404).json({
-        success: false,
-        error: 'Fund not found'
-      });
-    }
-
-    const fund = fundDoc.data();
-    let balanceData = null;
-
-    // Check if we need to update Firestore
-    const needsUpdate = await shouldUpdateFirestore(fundId);
-    
-    if (needsUpdate) {
-      console.log(`Fetching fresh balances for fund ${fundId}`);
-      const balances = await getWalletBalances(fund.fundContractAddress || fundId);
-      
-      // Calculate total value in USD
-      let totalValue = 0;
-      let tokens = [];
-      
-      if (balances?.items) {
-        tokens = await Promise.all(balances.items.map(async token => {
-          let price = 0;
-          if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
-            price = await getTokenPrice(token.address);
-          }
-          
-          const value = token.uiAmount * price;
-          totalValue += value;
-          
-          return {
-            address: token.address,
-            name: token.name || 'Unknown',
-            symbol: token.symbol || 'Unknown',
-            decimals: token.decimals,
-            balance: token.balance,
-            uiAmount: token.uiAmount,
-            price,
-            value
-          };
-        }));
-      }
-
-      balanceData = {
-        totalValue,
-        tokens: tokens.filter(t => t.uiAmount > 0) // Only include tokens with non-zero balance
-      };
-
-      // Update Firestore with new balance data
-      await updateFirestoreBalances(fundId, balanceData);
-    } else {
-      // Use cached data from Firestore
-      console.log(`Using cached balances for fund ${fundId}`);
-      balanceData = fund.balances;
-    }
-
-    const response = {
-      id: fundId,
-      contractAddress: fund.fundContractAddress || fundId,
-      baseToken: fund.baseToken || '',
-      chain: fund.chain || '',
-      createdAt: fund.createdAt || '',
-      description: fund.description || '',
-      fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
-        (fund.fundManagers ? [fund.fundManagers] : []),
-      fundToken: fund.fundToken || '',
-      name: fund.name || '',
-      balances: balanceData
+    // Clear all caches
+    tokenPriceCache.clear();
+    ethPriceCache = {
+      price: 0,
+      timestamp: 0
     };
 
-    console.log('Processed fund data:', response);
+    // Force update all funds in Firestore by setting lastBalanceUpdate to 0
+    const fundsSnapshot = await firestore.collection('funds').get();
+    const updatePromises = fundsSnapshot.docs.map(doc => 
+      doc.ref.update({
+        lastBalanceUpdate: admin.firestore.Timestamp.fromMillis(0)
+      })
+    );
+    
+    await Promise.all(updatePromises);
 
+    console.log('Successfully cleared all caches');
     res.json({
       success: true,
-      data: response
+      message: 'Cache cleared successfully'
     });
 
   } catch (error) {
-    console.error(`Error fetching fund ${req.params.fundId}:`, error);
+    console.error('Error clearing cache:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch fund data'
+      error: 'Failed to clear cache'
     });
   }
 });
