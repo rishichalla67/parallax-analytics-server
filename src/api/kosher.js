@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const admin = require('firebase-admin');
 const { getDatabase } = require('firebase-admin/database');
+const { getFirestore } = require('firebase-admin/firestore');
 const cron = require('node-cron');
 
 const router = express.Router();
@@ -15,11 +16,13 @@ if (admin.apps.length === 0) {
 }
 
 const db = getDatabase();
+const firestore = getFirestore();
 const firebaseKosherRef = db.ref('crypto/kosher');
 
 // Replace the cache object with Firebase references
 const firebaseKosherTransactionsRef = firebaseKosherRef.child('transactions');
 const firebaseKosherBalancesRef = firebaseKosherRef.child('balances');
+const firebaseKosherFundsRef = db.ref('/');  // Start at root
 
 function createRateLimiter(requestsPerSecond) {
   let lastRequest = 0;
@@ -708,12 +711,372 @@ router.get('/rabbi/price', async (req, res) => {
   }
 });
 
-// Add this after the cache-related constants and before the routes
-// Warm up the cache when the server starts
-warmupCache().then(() => {
-  console.log('Initial cache warmup completed on server start');
-}).catch(error => {
-  console.error('Error during initial cache warmup:', error);
+// Add price cache
+let tokenPriceCache = new Map();
+let ethPriceCache = {
+  price: 0,
+  timestamp: 0
+};
+const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+async function getEthPrice() {
+  const now = Date.now();
+  
+  if (ethPriceCache.timestamp && (now - ethPriceCache.timestamp) < PRICE_CACHE_DURATION) {
+    return ethPriceCache.price;
+  }
+
+  try {
+    const response = await axios.get('https://api.coingecko.com/api/v3/simple/price', {
+      params: {
+        ids: 'ethereum',
+        vs_currencies: 'usd'
+      }
+    });
+
+    if (response.data?.ethereum?.usd) {
+      ethPriceCache = {
+        price: response.data.ethereum.usd,
+        timestamp: now
+      };
+      return ethPriceCache.price;
+    }
+    return 0;
+  } catch (error) {
+    console.error('Error fetching ETH price from CoinGecko:', error);
+    return ethPriceCache.price || 0; // Return cached price if available, otherwise 0
+  }
+}
+
+async function getTokenPrice(tokenAddress) {
+  // Special case for ETH
+  if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+    return getEthPrice();
+  }
+
+  const now = Date.now();
+  const cachedData = tokenPriceCache.get(tokenAddress);
+  
+  if (cachedData && (now - cachedData.timestamp) < PRICE_CACHE_DURATION) {
+    return cachedData.price;
+  }
+
+  try {
+    const response = await axios.get(`https://public-api.birdeye.so/defi/token_overview?address=${tokenAddress}`, {
+      headers: {
+        'accept': 'application/json',
+        'x-chain': 'base',
+        'X-API-KEY': '1c6ae418826b4328ab69a4debae6470e'
+      }
+    });
+
+    if (response.data?.data?.price) {
+      tokenPriceCache.set(tokenAddress, {
+        price: response.data.data.price,
+        timestamp: now
+      });
+      return response.data.data.price;
+    }
+    return 0;
+  } catch (error) {
+    console.error(`Error fetching price for token ${tokenAddress}:`, error);
+    return 0;
+  }
+}
+
+async function getWalletBalances(walletAddress) {
+  try {
+    const response = await axios.get(`https://public-api.birdeye.so/v1/wallet/token_list?wallet=${walletAddress}`, {
+      headers: {
+        'accept': 'application/json',
+        'x-chain': 'base',
+        'X-API-KEY': '1c6ae418826b4328ab69a4debae6470e'
+      }
+    });
+
+    if (response.data?.success) {
+      return response.data.data;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error fetching balances for wallet ${walletAddress}:`, error);
+    return null;
+  }
+}
+
+const FIRESTORE_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+
+async function shouldUpdateFirestore(fundId) {
+  try {
+    const fundDoc = await firestore.collection('funds').doc(fundId).get();
+    if (!fundDoc.exists) return true;
+    
+    const data = fundDoc.data();
+    const lastUpdate = data.lastBalanceUpdate?.toMillis() || 0;
+    return (Date.now() - lastUpdate) > FIRESTORE_CACHE_DURATION;
+  } catch (error) {
+    console.error('Error checking Firestore update time:', error);
+    return true;
+  }
+}
+
+async function updateFirestoreBalances(fundId, balanceData) {
+  try {
+    const fundRef = firestore.collection('funds').doc(fundId);
+    const fundDoc = await fundRef.get();
+    
+    if (!fundDoc.exists) {
+      console.log(`Fund document ${fundId} doesn't exist, cannot update balances`);
+      return;
+    }
+
+    // Merge the new balance data with existing fund data
+    const updateData = {
+      ...fundDoc.data(),  // Keep existing fund data
+      balances: balanceData,
+      lastBalanceUpdate: admin.firestore.Timestamp.now()
+    };
+
+    // Use set with merge to ensure we don't lose any existing data
+    await fundRef.set(updateData, { merge: true });
+    console.log(`Updated Firestore balances for fund ${fundId}:`, balanceData);
+  } catch (error) {
+    console.error(`Error updating Firestore balances for fund ${fundId}:`, error);
+  }
+}
+
+// Update the funds endpoint
+router.get('/funds', async (req, res) => {
+  try {
+    console.log('Fetching funds data from Firestore...');
+    
+    const fundsSnapshot = await firestore.collection('funds').get();
+    
+    if (fundsSnapshot.empty) {
+      console.log('No funds found in Firestore');
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    // Process each fund and get its balances
+    const fundsPromises = fundsSnapshot.docs.map(async doc => {
+      const fund = doc.data();
+      const fundId = doc.id;
+      let balanceData = null;
+
+      // Check if we need to update Firestore
+      const needsUpdate = await shouldUpdateFirestore(fundId);
+      
+      if (needsUpdate) {
+        console.log(`Fetching fresh balances for fund ${fundId}`);
+        const balances = await getWalletBalances(fund.fundContractAddress || fundId);
+        
+        // Calculate total value in USD
+        let totalValue = 0;
+        let tokens = [];
+        
+        if (balances?.items) {
+          tokens = await Promise.all(balances.items.map(async token => {
+            let price = 0;
+            if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
+              price = await getTokenPrice(token.address);
+            }
+            
+            const value = token.uiAmount * price;
+            totalValue += value;
+            
+            return {
+              address: token.address,
+              name: token.name || 'Unknown',
+              symbol: token.symbol || 'Unknown',
+              decimals: token.decimals,
+              balance: token.balance,
+              uiAmount: token.uiAmount,
+              price,
+              value
+            };
+          }));
+        }
+
+        balanceData = {
+          totalValue,
+          tokens: tokens.filter(t => t.uiAmount > 0) // Only include tokens with non-zero balance
+        };
+
+        // Update Firestore with new balance data
+        await updateFirestoreBalances(fundId, balanceData);
+      } else {
+        // Use cached data from Firestore
+        console.log(`Using cached balances for fund ${fundId}`);
+        balanceData = fund.balances;
+      }
+
+      return {
+        id: fundId,
+        contractAddress: fund.fundContractAddress || fundId,
+        createdAt: fund.createdAt || '',
+        description: fund.description || '',
+        fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
+          (fund.fundManagers ? [fund.fundManagers] : []),
+        name: fund.name || '',
+        balances: balanceData
+      };
+    });
+
+    const funds = await Promise.all(fundsPromises);
+    console.log('Processed funds with balances:', funds);
+
+    res.json({
+      success: true,
+      data: funds
+    });
+
+  } catch (error) {
+    console.error('Error fetching funds:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch funds data'
+    });
+  }
+});
+
+// Optional: Add an endpoint to create/update funds (admin only)
+router.post('/funds', async (req, res) => {
+  try {
+    const { name, description, contractAddress, managers } = req.body;
+
+    if (!name || !description || !contractAddress || !managers) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields'
+      });
+    }
+
+    const newFund = {
+      name,
+      description,
+      contractAddress,
+      managers,
+      createdAt: new Date().toISOString()
+    };
+
+    // Get existing funds
+    const snapshot = await firebaseKosherFundsRef.once('value');
+    const existingFunds = snapshot.val() || [];
+
+    // Add new fund
+    await firebaseKosherFundsRef.set([...existingFunds, newFund]);
+
+    res.json({
+      success: true,
+      data: newFund
+    });
+
+  } catch (error) {
+    console.error('Error creating fund:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create fund'
+    });
+  }
+});
+
+// Add new endpoint for specific fund
+router.get('/funds/:fundId', async (req, res) => {
+  try {
+    const { fundId } = req.params;
+    console.log(`Fetching data for fund ${fundId}...`);
+    
+    const fundDoc = await firestore.collection('funds').doc(fundId).get();
+    
+    if (!fundDoc.exists) {
+      console.log(`Fund ${fundId} not found`);
+      return res.status(404).json({
+        success: false,
+        error: 'Fund not found'
+      });
+    }
+
+    const fund = fundDoc.data();
+    let balanceData = null;
+
+    // Check if we need to update Firestore
+    const needsUpdate = await shouldUpdateFirestore(fundId);
+    
+    if (needsUpdate) {
+      console.log(`Fetching fresh balances for fund ${fundId}`);
+      const balances = await getWalletBalances(fund.fundContractAddress || fundId);
+      
+      // Calculate total value in USD
+      let totalValue = 0;
+      let tokens = [];
+      
+      if (balances?.items) {
+        tokens = await Promise.all(balances.items.map(async token => {
+          let price = 0;
+          if (token.address !== "0x4A67aFD36c48774EA645991720821279378C281a") { // Skip null address
+            price = await getTokenPrice(token.address);
+          }
+          
+          const value = token.uiAmount * price;
+          totalValue += value;
+          
+          return {
+            address: token.address,
+            name: token.name || 'Unknown',
+            symbol: token.symbol || 'Unknown',
+            decimals: token.decimals,
+            balance: token.balance,
+            uiAmount: token.uiAmount,
+            price,
+            value
+          };
+        }));
+      }
+
+      balanceData = {
+        totalValue,
+        tokens: tokens.filter(t => t.uiAmount > 0) // Only include tokens with non-zero balance
+      };
+
+      // Update Firestore with new balance data
+      await updateFirestoreBalances(fundId, balanceData);
+    } else {
+      // Use cached data from Firestore
+      console.log(`Using cached balances for fund ${fundId}`);
+      balanceData = fund.balances;
+    }
+
+    const response = {
+      id: fundId,
+      contractAddress: fund.fundContractAddress || fundId,
+      baseToken: fund.baseToken || '',
+      chain: fund.chain || '',
+      createdAt: fund.createdAt || '',
+      description: fund.description || '',
+      fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
+        (fund.fundManagers ? [fund.fundManagers] : []),
+      fundToken: fund.fundToken || '',
+      name: fund.name || '',
+      balances: balanceData
+    };
+
+    console.log('Processed fund data:', response);
+
+    res.json({
+      success: true,
+      data: response
+    });
+
+  } catch (error) {
+    console.error(`Error fetching fund ${req.params.fundId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch fund data'
+    });
+  }
 });
 
 module.exports = router;
