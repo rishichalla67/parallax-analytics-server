@@ -1155,13 +1155,21 @@ router.get('/rabbi/base-balances', async (req, res) => {
     const balances = await getWalletBalances(walletAddress);
     const balanceData = await processTokenBalances(balances);
 
-    // Update cache
+    // Update cache with format matching /funds endpoint
     baseBalanceCache = {
       data: {
-        address: walletAddress,
+        id: walletAddress,
+        contractAddress: walletAddress,
+        baseToken: '',
+        chain: 'base',
+        createdAt: '',
+        description: '',
+        fundManagers: [],
+        fundToken: '',
+        name: '',
         balances: balanceData,
-        lastUpdated: new Date().toISOString(),
-        has_enough_btc_weight: checkBtcWeight(balanceData)
+        has_enough_btc_weight: checkBtcWeight(balanceData),
+        lastUpdated: new Date().toISOString()
       },
       timestamp: now
     };
