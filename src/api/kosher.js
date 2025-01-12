@@ -1099,6 +1099,10 @@ router.get('/clear-cache', async (req, res) => {
       price: 0,
       timestamp: 0
     };
+    baseBalanceCache = {
+      data: null,
+      timestamp: 0
+    };
 
     // Force update all funds in Firestore by setting lastBalanceUpdate to 0
     const fundsSnapshot = await firestore.collection('funds').get();
@@ -1121,6 +1125,69 @@ router.get('/clear-cache', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to clear cache'
+    });
+  }
+});
+
+// Add balance cache for Base chain address
+let baseBalanceCache = {
+  data: null,
+  timestamp: 0
+};
+
+// Add new endpoint for Base chain balances
+router.get('/rabbi/base-balances', async (req, res) => {
+  try {
+    const walletAddress = '0xaa8d210f7c34a056Bb573f15962673C5c24fbd10';
+    const now = Date.now();
+
+    // Check if we have valid cached data
+    if (baseBalanceCache.data && (now - baseBalanceCache.timestamp) < PRICE_CACHE_DURATION) {
+      console.log('Returning cached Base chain balances');
+      return res.json({
+        success: true,
+        data: baseBalanceCache.data,
+        fromCache: true
+      });
+    }
+
+    console.log(`Fetching fresh Base chain balances for ${walletAddress}...`);
+    const balances = await getWalletBalances(walletAddress);
+    const balanceData = await processTokenBalances(balances);
+
+    // Update cache
+    baseBalanceCache = {
+      data: {
+        address: walletAddress,
+        balances: balanceData,
+        lastUpdated: new Date().toISOString(),
+        has_enough_btc_weight: checkBtcWeight(balanceData)
+      },
+      timestamp: now
+    };
+
+    res.json({
+      success: true,
+      data: baseBalanceCache.data,
+      fromCache: false
+    });
+
+  } catch (error) {
+    console.error('Error fetching Base chain balances:', error);
+    
+    // If we have cached data and there's an error, return the cached data
+    if (baseBalanceCache.data) {
+      return res.json({
+        success: true,
+        data: baseBalanceCache.data,
+        fromCache: true,
+        error: 'Failed to fetch fresh data, returning cached data'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Base chain balances'
     });
   }
 });
