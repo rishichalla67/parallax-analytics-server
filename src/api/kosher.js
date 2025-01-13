@@ -711,13 +711,15 @@ router.get('/rabbi/price', async (req, res) => {
   }
 });
 
-// Add price cache
+// Add near the top with other cache-related variables
 let tokenPriceCache = new Map();
+let tokenOverviewCache = new Map();
 let ethPriceCache = {
   price: 0,
   timestamp: 0
 };
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const TOKEN_OVERVIEW_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 async function getEthPrice() {
   const now = Date.now();
@@ -759,9 +761,22 @@ async function getTokenPrice(tokenAddress) {
 
   const now = Date.now();
   const cachedData = tokenPriceCache.get(tokenAddress);
+  const cachedOverview = tokenOverviewCache.get(tokenAddress);
   
+  // Check if we have valid cache
   if (cachedData && (now - cachedData.timestamp) < PRICE_CACHE_DURATION) {
     return cachedData;
+  }
+
+  // Check if we have valid overview cache
+  if (cachedOverview && (now - cachedOverview.timestamp) < TOKEN_OVERVIEW_CACHE_DURATION) {
+    const data = {
+      price: cachedOverview.data.price || 0,
+      logoURI: cachedOverview.data.logoURI || '',
+      timestamp: now
+    };
+    tokenPriceCache.set(tokenAddress, data);
+    return data;
   }
 
   try {
@@ -774,6 +789,13 @@ async function getTokenPrice(tokenAddress) {
     });
 
     if (response.data?.data) {
+      // Cache the full token overview response
+      tokenOverviewCache.set(tokenAddress, {
+        data: response.data.data,
+        timestamp: now
+      });
+
+      // Cache the price and logo data separately
       const data = {
         price: response.data.data.price || 0,
         logoURI: response.data.data.logoURI || '',
@@ -892,8 +914,8 @@ async function processTokenBalances(balances) {
       };
     }));
 
-    // Filter out zero balances
-    tokens = tokens.filter(t => t.uiAmount > 0);
+    // Filter out tokens with zero value and weight
+    tokens = tokens.filter(t => t.value > 0 && t.weight > 0);
     
     // Sort by weight descending
     tokens.sort((a, b) => b.weight - a.weight);
@@ -956,11 +978,17 @@ router.get('/funds', async (req, res) => {
 
       return {
         id: fundId,
-        contractAddress: fund.fundContractAddress || fundId,
-        createdAt: fund.createdAt || '',
+        aiManager: fund.aiManager || '',
+        baseToken: fund.baseToken || '',
+        chain: fund.chain || '',
         description: fund.description || '',
+        fundContractAddress: fund.fundContractAddress || fundId,
+        fundImg: fund.fundImg || '',
         fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
           (fund.fundManagers ? [fund.fundManagers] : []),
+        fundToken: fund.fundToken || '',
+        fundType: fund.fundType || '',
+        lastBalanceUpdate: fund.lastBalanceUpdate?.toDate()?.toISOString() || new Date().toISOString(),
         name: fund.name || '',
         balances: balanceData,
         has_enough_btc_weight: checkBtcWeight(balanceData)
@@ -1021,14 +1049,17 @@ router.get('/funds/:fundId', async (req, res) => {
 
     const response = {
       id: fundId,
-      contractAddress: fund.fundContractAddress || fundId,
+      aiManager: fund.aiManager || '',
       baseToken: fund.baseToken || '',
       chain: fund.chain || '',
-      createdAt: fund.createdAt || '',
       description: fund.description || '',
+      fundContractAddress: fund.fundContractAddress || fundId,
+      fundImg: fund.fundImg || '',
       fundManagers: Array.isArray(fund.fundManagers) ? fund.fundManagers : 
         (fund.fundManagers ? [fund.fundManagers] : []),
       fundToken: fund.fundToken || '',
+      fundType: fund.fundType || '',
+      lastBalanceUpdate: fund.lastBalanceUpdate?.toDate()?.toISOString() || new Date().toISOString(),
       name: fund.name || '',
       balances: balanceData,
       has_enough_btc_weight: checkBtcWeight(balanceData)
@@ -1096,6 +1127,7 @@ router.get('/clear-cache', async (req, res) => {
   try {
     // Clear all caches
     tokenPriceCache.clear();
+    tokenOverviewCache.clear();
     ethPriceCache = {
       price: 0,
       timestamp: 0
