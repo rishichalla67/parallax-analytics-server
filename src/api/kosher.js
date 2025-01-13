@@ -910,7 +910,8 @@ function checkBtcWeight(balances) {
   if (!balances?.tokens) return false;
   
   const btcToken = balances.tokens.find(t => 
-    t.address.toLowerCase() === '0x7126b7629e5c0b4e645c3859e1141838accd125b'.toLowerCase()
+    t.address.toLowerCase() === '0x7126b7629e5c0b4e645c3859e1141838accd125b'.toLowerCase() ||  // Original BTC address
+    t.address.toLowerCase() === '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'.toLowerCase()      // cbBTC address on Base
   );
   
   return btcToken ? btcToken.weight > 30 : false;
